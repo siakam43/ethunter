@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Build artifacts
+*.egg-info/
+dist/
+build/
+
+# Virtual environment
+.venv/
+
+# Pytest
+.pytest_cache/
+
+# OMC runtime state (keep plans, specs, prd, memory)
+.omc/state/
+.omc/sessions/
+
+# Claude Code local settings
+.claude/
+.omc/notepad.md
+.omc/progress.txt
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,7 +1,0 @@
-{
-  "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"git rm -r --cached .omc/ .claude/ src/ethunter.egg-info/ && find . -path './src/**/__pycache__' -o -path './tests/__pycache__' | while read f; do git rm -r --cached \\\"$f\\\" 2>/dev/null; don...",
-  "error": "Exit code 1\nerror: the following file has staged content different from both the\nfile and the HEAD:\n    .omc/state/hud-stdin-cache.json\n(use -f to force removal)",
-  "timestamp": "2026-05-08T08:37:20.219Z",
-  "retry_count": 1
-}
