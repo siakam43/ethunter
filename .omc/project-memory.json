@@ -1,0 +1,382 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1778160137353,
+  "projectRoot": "/home/admin/cc/wksp/ethunter",
+  "techStack": {
+    "languages": [
+      {
+        "name": "Python",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "pyproject.toml"
+        ]
+      }
+    ],
+    "frameworks": [
+      {
+        "name": "pytest",
+        "version": null,
+        "category": "testing"
+      }
+    ],
+    "packageManager": null,
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": null,
+    "testCommand": "pytest",
+    "lintCommand": "ruff check",
+    "devCommand": null,
+    "scripts": {}
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "src",
+      "tests"
+    ],
+    "gitBranches": null
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "benchmarks": {
+      "path": "benchmarks",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1778160137201,
+      "keyFiles": []
+    },
+    "src": {
+      "path": "src",
+      "purpose": "Source code",
+      "fileCount": 0,
+      "lastAccessed": 1778160137224,
+      "keyFiles": []
+    },
+    "tests": {
+      "path": "tests",
+      "purpose": "Test files",
+      "fileCount": 0,
+      "lastAccessed": 1778160137249,
+      "keyFiles": []
+    },
+    "tests/fixtures": {
+      "path": "tests/fixtures",
+      "purpose": "Test fixtures",
+      "fileCount": 0,
+      "lastAccessed": 1778160137273,
+      "keyFiles": []
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "src/ethunter/cli.py",
+      "accessCount": 33,
+      "lastAccessed": 1778227984320,
+      "type": "file"
+    },
+    {
+      "path": "src/ethunter/analyzer/fp_alias.py",
+      "accessCount": 10,
+      "lastAccessed": 1778202787333,
+      "type": "file"
+    },
+    {
+      "path": "src/ethunter/graph/model.py",
+      "accessCount": 10,
+      "lastAccessed": 1778222317526,
+      "type": "file"
+    },
+    {
+      "path": "src/ethunter/analyzer/fp_assign.py",
+      "accessCount": 9,
+      "lastAccessed": 1778170361782,
+      "type": "file"
+    },
+    {
+      "path": "src/ethunter/analyzer/orchestrator.py",
+      "accessCount": 9,
+      "lastAccessed": 1778202733210,
+      "type": "file"
+    },
+    {
+      "path": "tests/test_analyzers.py",
+      "accessCount": 9,
+      "lastAccessed": 1778223540474,
+      "type": "file"
+    },
+    {
+      "path": "src/ethunter/parser/scanner.py",
+      "accessCount": 6,
+      "lastAccessed": 1778210036546,
+      "type": "file"
+    },
+    {
+      "path": "src/ethunter/analyzer/callback_reg.py",
+      "accessCount": 5,
+      "lastAccessed": 1778166342016,
+      "type": "file"
+    },
+    {
+      "path": "src/ethunter/output/dot_output.py",
+      "accessCount": 5,
+      "lastAccessed": 1778205442281,
+      "type": "file"
+    },
+    {
+      "path": "pyproject.toml",
+      "accessCount": 5,
+      "lastAccessed": 1778205773164,
+      "type": "file"
+    },
+    {
+      "path": "src/ethunter/output/json_output.py",
+      "accessCount": 5,
+      "lastAccessed": 1778223557028,
+      "type": "file"
+    },
+    {
+      "path": "src/ethunter/analyzer/vtable.py",
+      "accessCount": 4,
+      "lastAccessed": 1778166349457,
+      "type": "file"
+    },
+    {
+      "path": "src/ethunter/analyzer/symbol_table.py",
+      "accessCount": 4,
+      "lastAccessed": 1778166454317,
+      "type": "file"
+    },
+    {
+      "path": "src/ethunter/analyzer/direct_call.py",
+      "accessCount": 4,
+      "lastAccessed": 1778202791157,
+      "type": "file"
+    },
+    {
+      "path": "src/ethunter/query/engine.py",
+      "accessCount": 4,
+      "lastAccessed": 1778204649683,
+      "type": "file"
+    },
+    {
+      "path": "src/ethunter/analyzer/union_fp.py",
+      "accessCount": 3,
+      "lastAccessed": 1778166371436,
+      "type": "file"
+    },
+    {
+      "path": "src/ethunter/analyzer/fp_return.py",
+      "accessCount": 3,
+      "lastAccessed": 1778168168798,
+      "type": "file"
+    },
+    {
+      "path": "src/ethunter/analyzer/lazy_init.py",
+      "accessCount": 3,
+      "lastAccessed": 1778168347494,
+      "type": "file"
+    },
+    {
+      "path": "src/ethunter/analyzer/macro_fp.py",
+      "accessCount": 2,
+      "lastAccessed": 1778164343549,
+      "type": "file"
+    },
+    {
+      "path": "src/ethunter/analyzer/fp_array.py",
+      "accessCount": 2,
+      "lastAccessed": 1778166344114,
+      "type": "file"
+    },
+    {
+      "path": "src/ethunter/analyzer/callback_param.py",
+      "accessCount": 2,
+      "lastAccessed": 1778166347527,
+      "type": "file"
+    },
+    {
+      "path": "src/ethunter/analyzer/typedef_fp.py",
+      "accessCount": 2,
+      "lastAccessed": 1778166368796,
+      "type": "file"
+    },
+    {
+      "path": "src/ethunter/analyzer/dataflow.py",
+      "accessCount": 2,
+      "lastAccessed": 1778166453889,
+      "type": "file"
+    },
+    {
+      "path": "tests/fixtures/fp_alias.c",
+      "accessCount": 2,
+      "lastAccessed": 1778167465779,
+      "type": "file"
+    },
+    {
+      "path": "tests/fixtures/fp_alias_complex.c",
+      "accessCount": 2,
+      "lastAccessed": 1778167485968,
+      "type": "file"
+    },
+    {
+      "path": "src/ethunter/analyzer/base.py",
+      "accessCount": 2,
+      "lastAccessed": 1778202734596,
+      "type": "file"
+    },
+    {
+      "path": "src/ethunter/parser/preprocessor.py",
+      "accessCount": 2,
+      "lastAccessed": 1778202773786,
+      "type": "file"
+    },
+    {
+      "path": "src/ethunter/analyzer/dlsym_fp.py",
+      "accessCount": 1,
+      "lastAccessed": 1778161853640,
+      "type": "file"
+    },
+    {
+      "path": "tests/fixtures/direct_call.c",
+      "accessCount": 1,
+      "lastAccessed": 1778161991980,
+      "type": "file"
+    },
+    {
+      "path": "tests/fixtures/fp_assign.c",
+      "accessCount": 1,
+      "lastAccessed": 1778162015713,
+      "type": "file"
+    },
+    {
+      "path": "prd.json",
+      "accessCount": 1,
+      "lastAccessed": 1778163249252,
+      "type": "file"
+    },
+    {
+      "path": "tests/fixtures/vtable.c",
+      "accessCount": 1,
+      "lastAccessed": 1778166404644,
+      "type": "file"
+    },
+    {
+      "path": "tests/fixtures/callback_param.c",
+      "accessCount": 1,
+      "lastAccessed": 1778166409022,
+      "type": "file"
+    },
+    {
+      "path": "tests/fixtures/typedef_fp.c",
+      "accessCount": 1,
+      "lastAccessed": 1778166436258,
+      "type": "file"
+    },
+    {
+      "path": "tests/fixtures/dlsym_fp.c",
+      "accessCount": 1,
+      "lastAccessed": 1778166438264,
+      "type": "file"
+    },
+    {
+      "path": "tests/fixtures/lazy_init.c",
+      "accessCount": 1,
+      "lastAccessed": 1778166438413,
+      "type": "file"
+    },
+    {
+      "path": "tests/fixtures/macro_fp.c",
+      "accessCount": 1,
+      "lastAccessed": 1778166438908,
+      "type": "file"
+    },
+    {
+      "path": "src/ethunter/analyzer/__init__.py",
+      "accessCount": 1,
+      "lastAccessed": 1778166503478,
+      "type": "file"
+    },
+    {
+      "path": "tests/fixtures/direct_call_complex.c",
+      "accessCount": 1,
+      "lastAccessed": 1778167119496,
+      "type": "file"
+    },
+    {
+      "path": "tests/fixtures/fp_assign_complex.c",
+      "accessCount": 1,
+      "lastAccessed": 1778167141937,
+      "type": "file"
+    },
+    {
+      "path": "tests/fixtures/callback_param_complex.c",
+      "accessCount": 1,
+      "lastAccessed": 1778167160225,
+      "type": "file"
+    },
+    {
+      "path": "tests/fixtures/fp_return_complex.c",
+      "accessCount": 1,
+      "lastAccessed": 1778167188968,
+      "type": "file"
+    },
+    {
+      "path": "tests/fixtures/fp_array_complex.c",
+      "accessCount": 1,
+      "lastAccessed": 1778167204274,
+      "type": "file"
+    },
+    {
+      "path": "tests/fixtures/vtable_complex.c",
+      "accessCount": 1,
+      "lastAccessed": 1778167223255,
+      "type": "file"
+    },
+    {
+      "path": "tests/fixtures/callback_reg_complex.c",
+      "accessCount": 1,
+      "lastAccessed": 1778167246364,
+      "type": "file"
+    },
+    {
+      "path": "tests/fixtures/union_fp_complex.c",
+      "accessCount": 1,
+      "lastAccessed": 1778167263662,
+      "type": "file"
+    },
+    {
+      "path": "tests/fixtures/typedef_fp_complex.c",
+      "accessCount": 1,
+      "lastAccessed": 1778167281455,
+      "type": "file"
+    },
+    {
+      "path": "tests/fixtures/lazy_init_complex.c",
+      "accessCount": 1,
+      "lastAccessed": 1778167314722,
+      "type": "file"
+    },
+    {
+      "path": "tests/fixtures/macro_fp_complex.c",
+      "accessCount": 1,
+      "lastAccessed": 1778167331793,
+      "type": "file"
+    },
+    {
+      "path": "tests/fixtures/dlsym_fp_complex.c",
+      "accessCount": 1,
+      "lastAccessed": 1778167348307,
+      "type": "file"
+    }
+  ],
+  "userDirectives": []
+}

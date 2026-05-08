@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ethunter"
+version = "0.1.0"
+description = "A static analysis tool for C source code call graph generation"
+requires-python = ">=3.10"
+dependencies = [
+    "tree-sitter>=0.21",
+    "tree-sitter-c>=0.21",
+    "pytest>=7.0",
+]
+
+[project.scripts]
+ethunter = "ethunter.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

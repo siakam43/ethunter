@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C /home/admin/claude_code/wksp/ethunter log --oneline -5)",
+      "mcp__plugin_oh-my-claudecode_t__state_write",
+      "Bash(pip3 list *)",
+      "Read(//usr/bin/**)",
+      "Read(//usr/local/bin/**)",
+      "Read(//opt/**)",
+      "Read(//usr/local/**)",
+      "Bash(yum list *)",
+      "Bash(apt list *)",
+      "Bash(python3.11 -m pip install tree-sitter tree-sitter-c pytest)",
+      "Bash(python3.11 *)",
+      "Bash(.venv/bin/python *)",
+      "Bash(PYTHONPATH=src .venv/bin/python *)",
+      "Bash(/home/admin/cc/wksp/ethunter/.venv/bin/python -m pytest /home/admin/cc/wksp/ethunter/tests/test_analyzers.py -v)",
+      "Bash(PYTHONPATH=/home/admin/cc/wksp/ethunter/src /home/admin/cc/wksp/ethunter/.venv/bin/python -m pytest /home/admin/cc/wksp/ethunter/tests/test_analyzers.py -v)",
+      "Bash(curl -sL https://raw.githubusercontent.com/DaveGamble/cJSON/v1.7.18/cJSON.c -o tests/benchmark/cjson/cJSON.c)",
+      "Bash(curl -sL https://raw.githubusercontent.com/DaveGamble/cJSON/v1.7.18/cJSON.h -o tests/benchmark/cjson/cJSON.h)",
+      "Bash(python3 -m json.tool)",
+      "Bash(echo \"Exit: $?\")"
+    ]
+  }
+}

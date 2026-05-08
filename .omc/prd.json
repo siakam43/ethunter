@@ -1,0 +1,41 @@
+{
+  "stories": [
+    {
+      "id": "US-001",
+      "title": "Refactor CLI argparse: replace positional project_dir with --analyze, add mutual exclusion",
+      "acceptanceCriteria": [
+        "Positional project_dir argument removed from argparse",
+        "--analyze DIR flag added as replacement",
+        "--analyze and --from-json are mutually exclusive (error + exit 1 if both used)",
+        "ethunter --analyze /path/to/project produces JSON output",
+        "ethunter --from-json graph.json --find-entry works",
+        "ethunter --from-json graph.json --query NAME works",
+        "ethunter --from-json graph.json --to-dot works",
+        "--query/--to-dot/--find-entry without --from-json produces error + exit 1",
+        "-o flag works with both --analyze and --from-json modes"
+      ],
+      "passes": false
+    },
+    {
+      "id": "US-002",
+      "title": "Update all existing tests to use new CLI interface",
+      "acceptanceCriteria": [
+        "test_query_json.py updated: all subprocess CLI calls use --analyze instead of positional arg",
+        "All existing tests pass (no regressions)",
+        "New tests for --analyze/--from-json mutual exclusion",
+        "New tests for --query/--to-dot/--find-entry requiring --from-json"
+      ],
+      "passes": false
+    },
+    {
+      "id": "US-003",
+      "title": "Update CLAUDE.md with new CLI usage examples",
+      "acceptanceCriteria": [
+        "CLAUDE.md Commands section updated with --analyze syntax",
+        "CLAUDE.md reflects --query/--to-dot/--find-entry only work with --from-json",
+        "Old positional project_dir examples removed"
+      ],
+      "passes": false
+    }
+  ]
+}

@@ -1,0 +1,541 @@
+{
+  "project": "libuv",
+  "version": "1.48.0",
+  "source_files": [
+    "core.c",
+    "loop.c",
+    "fs.c",
+    "uv-common.c"
+  ],
+  "direct_edges": [
+    {
+      "caller": "uv_close",
+      "callee": "uv__make_close_pending"
+    },
+    {
+      "caller": "uv__finish_close",
+      "callee": "uv__make_close_pending"
+    },
+    {
+      "caller": "uv__run_closing_handles",
+      "callee": "uv__finish_close"
+    },
+    {
+      "caller": "uv_backend_timeout",
+      "callee": "uv__backend_timeout"
+    },
+    {
+      "caller": "uv_loop_alive",
+      "callee": "uv__loop_alive"
+    },
+    {
+      "caller": "uv_run",
+      "callee": "uv__loop_alive"
+    },
+    {
+      "caller": "uv_run",
+      "callee": "uv__run_pending"
+    },
+    {
+      "caller": "uv_run",
+      "callee": "uv__backend_timeout"
+    },
+    {
+      "caller": "uv_run",
+      "callee": "uv__metrics_update_idle_time"
+    },
+    {
+      "caller": "uv_run",
+      "callee": "uv__run_closing_handles"
+    },
+    {
+      "caller": "uv__socket",
+      "callee": "uv__cloexec"
+    },
+    {
+      "caller": "uv__socket",
+      "callee": "uv__close"
+    },
+    {
+      "caller": "uv__accept",
+      "callee": "uv__cloexec"
+    },
+    {
+      "caller": "uv__accept",
+      "callee": "uv__close"
+    },
+    {
+      "caller": "uv__close_nocancel",
+      "callee": "close$NOCANCEL"
+    },
+    {
+      "caller": "uv__close_nocancel",
+      "callee": "close$NOCANCEL$UNIX2003"
+    },
+    {
+      "caller": "uv__close_nocheckstdio",
+      "callee": "uv__close_nocancel"
+    },
+    {
+      "caller": "uv__close",
+      "callee": "uv__close_nocheckstdio"
+    },
+    {
+      "caller": "uv__recvmsg",
+      "callee": "uv__cloexec"
+    },
+    {
+      "caller": "uv_disable_stdio_inheritance",
+      "callee": "uv__cloexec"
+    },
+    {
+      "caller": "maybe_resize",
+      "callee": "next_power_of_two"
+    },
+    {
+      "caller": "uv__io_start",
+      "callee": "maybe_resize"
+    },
+    {
+      "caller": "uv__io_close",
+      "callee": "uv__io_stop"
+    },
+    {
+      "caller": "uv__open_cloexec",
+      "callee": "uv__cloexec"
+    },
+    {
+      "caller": "uv__open_cloexec",
+      "callee": "uv__close"
+    },
+    {
+      "caller": "uv__slurp",
+      "callee": "uv__open_cloexec"
+    },
+    {
+      "caller": "uv__slurp",
+      "callee": "uv__close_nocheckstdio"
+    },
+    {
+      "caller": "uv__dup2_cloexec",
+      "callee": "uv__cloexec"
+    },
+    {
+      "caller": "uv__dup2_cloexec",
+      "callee": "uv__close"
+    },
+    {
+      "caller": "uv_os_homedir",
+      "callee": "uv_os_getenv"
+    },
+    {
+      "caller": "uv_os_homedir",
+      "callee": "uv_os_get_passwd"
+    },
+    {
+      "caller": "uv_os_homedir",
+      "callee": "uv_os_free_passwd"
+    },
+    {
+      "caller": "uv__getpwuid_r",
+      "callee": "uv__free"
+    },
+    {
+      "caller": "uv_os_get_group",
+      "callee": "uv__free"
+    },
+    {
+      "caller": "uv_os_get_passwd",
+      "callee": "uv__getpwuid_r"
+    },
+    {
+      "caller": "uv_os_get_passwd2",
+      "callee": "uv__getpwuid_r"
+    },
+    {
+      "caller": "uv_os_environ",
+      "callee": "uv__free"
+    },
+    {
+      "caller": "uv_thread_setpriority",
+      "callee": "set_nice_for_calling_thread"
+    },
+    {
+      "caller": "uv__getsockpeername",
+      "callee": "uv_fileno"
+    },
+    {
+      "caller": "uv__search_path",
+      "callee": "uv__free"
+    },
+    {
+      "caller": "uv_loop_init",
+      "callee": "uv__free"
+    },
+    {
+      "caller": "uv__loop_close",
+      "callee": "uv__close"
+    },
+    {
+      "caller": "uv__loop_close",
+      "callee": "uv__free"
+    },
+    {
+      "caller": "uv__fs_close",
+      "callee": "uv__close_nocancel"
+    },
+    {
+      "caller": "uv__fs_fdatasync",
+      "callee": "uv__fs_fsync"
+    },
+    {
+      "caller": "uv__fs_mkstemp",
+      "callee": "uv__cloexec"
+    },
+    {
+      "caller": "uv__fs_mkstemp",
+      "callee": "uv__close"
+    },
+    {
+      "caller": "uv__fs_open",
+      "callee": "uv__cloexec"
+    },
+    {
+      "caller": "uv__fs_open",
+      "callee": "uv__close"
+    },
+    {
+      "caller": "uv__fs_read",
+      "callee": "uv__getiovmax"
+    },
+    {
+      "caller": "uv__fs_read",
+      "callee": "uv__free"
+    },
+    {
+      "caller": "uv__fs_opendir",
+      "callee": "uv__free"
+    },
+    {
+      "caller": "uv__fs_readdir",
+      "callee": "uv__fs_get_dirent_type"
+    },
+    {
+      "caller": "uv__fs_readdir",
+      "callee": "uv__free"
+    },
+    {
+      "caller": "uv__fs_closedir",
+      "callee": "uv__free"
+    },
+    {
+      "caller": "uv__fs_readlink",
+      "callee": "uv__fs_pathmax_size"
+    },
+    {
+      "caller": "uv__fs_readlink",
+      "callee": "uv__free"
+    },
+    {
+      "caller": "uv__fs_realpath",
+      "callee": "uv__fs_pathmax_size"
+    },
+    {
+      "caller": "uv__fs_realpath",
+      "callee": "uv__free"
+    },
+    {
+      "caller": "uv__fs_try_copy_file_range",
+      "callee": "uv__is_buggy_cephfs"
+    },
+    {
+      "caller": "uv__fs_try_copy_file_range",
+      "callee": "uv__is_cifs_or_smb"
+    },
+    {
+      "caller": "uv__fs_sendfile",
+      "callee": "uv__fs_try_copy_file_range"
+    },
+    {
+      "caller": "uv__fs_sendfile",
+      "callee": "uv__fs_sendfile_emul"
+    },
+    {
+      "caller": "uv__fs_copyfile",
+      "callee": "uv_fs_open"
+    },
+    {
+      "caller": "uv__fs_copyfile",
+      "callee": "uv_fs_req_cleanup"
+    },
+    {
+      "caller": "uv__fs_copyfile",
+      "callee": "uv__is_cifs_or_smb"
+    },
+    {
+      "caller": "uv__fs_copyfile",
+      "callee": "uv_fs_sendfile"
+    },
+    {
+      "caller": "uv__fs_copyfile",
+      "callee": "uv__close_nocheckstdio"
+    },
+    {
+      "caller": "uv__fs_copyfile",
+      "callee": "uv_fs_unlink"
+    },
+    {
+      "caller": "uv__fs_stat",
+      "callee": "uv__fs_statx"
+    },
+    {
+      "caller": "uv__fs_stat",
+      "callee": "uv__to_stat"
+    },
+    {
+      "caller": "uv__fs_lstat",
+      "callee": "uv__fs_statx"
+    },
+    {
+      "caller": "uv__fs_lstat",
+      "callee": "uv__to_stat"
+    },
+    {
+      "caller": "uv__fs_fstat",
+      "callee": "uv__fs_statx"
+    },
+    {
+      "caller": "uv__fs_fstat",
+      "callee": "uv__to_stat"
+    },
+    {
+      "caller": "uv__fs_write_all",
+      "callee": "uv__getiovmax"
+    },
+    {
+      "caller": "uv__fs_write_all",
+      "callee": "uv__fs_write"
+    },
+    {
+      "caller": "uv__fs_write_all",
+      "callee": "uv__fs_buf_offset"
+    },
+    {
+      "caller": "uv__fs_write_all",
+      "callee": "uv__free"
+    },
+    {
+      "caller": "uv__fs_work",
+      "callee": "uv__fs_close"
+    },
+    {
+      "caller": "uv__fs_work",
+      "callee": "uv__fs_copyfile"
+    },
+    {
+      "caller": "uv__fs_work",
+      "callee": "uv__fs_fdatasync"
+    },
+    {
+      "caller": "uv__fs_work",
+      "callee": "uv__fs_fstat"
+    },
+    {
+      "caller": "uv__fs_work",
+      "callee": "uv__fs_fsync"
+    },
+    {
+      "caller": "uv__fs_work",
+      "callee": "uv__fs_futime"
+    },
+    {
+      "caller": "uv__fs_work",
+      "callee": "uv__fs_lutime"
+    },
+    {
+      "caller": "uv__fs_work",
+      "callee": "uv__fs_lstat"
+    },
+    {
+      "caller": "uv__fs_work",
+      "callee": "uv__fs_mkdtemp"
+    },
+    {
+      "caller": "uv__fs_work",
+      "callee": "uv__fs_mkstemp"
+    },
+    {
+      "caller": "uv__fs_work",
+      "callee": "uv__fs_open"
+    },
+    {
+      "caller": "uv__fs_work",
+      "callee": "uv__fs_read"
+    },
+    {
+      "caller": "uv__fs_work",
+      "callee": "uv__fs_scandir"
+    },
+    {
+      "caller": "uv__fs_work",
+      "callee": "uv__fs_opendir"
+    },
+    {
+      "caller": "uv__fs_work",
+      "callee": "uv__fs_readdir"
+    },
+    {
+      "caller": "uv__fs_work",
+      "callee": "uv__fs_closedir"
+    },
+    {
+      "caller": "uv__fs_work",
+      "callee": "uv__fs_readlink"
+    },
+    {
+      "caller": "uv__fs_work",
+      "callee": "uv__fs_realpath"
+    },
+    {
+      "caller": "uv__fs_work",
+      "callee": "uv__fs_sendfile"
+    },
+    {
+      "caller": "uv__fs_work",
+      "callee": "uv__fs_stat"
+    },
+    {
+      "caller": "uv__fs_work",
+      "callee": "uv__fs_statfs"
+    },
+    {
+      "caller": "uv__fs_work",
+      "callee": "uv__fs_utime"
+    },
+    {
+      "caller": "uv__fs_work",
+      "callee": "uv__fs_write_all"
+    },
+    {
+      "caller": "uv_fs_req_cleanup",
+      "callee": "uv__free"
+    },
+    {
+      "caller": "uv_fs_req_cleanup",
+      "callee": "uv__fs_readdir_cleanup"
+    },
+    {
+      "caller": "uv_fs_req_cleanup",
+      "callee": "uv__fs_scandir_cleanup"
+    },
+    {
+      "caller": "uv_os_free_passwd",
+      "callee": "uv__free"
+    },
+    {
+      "caller": "uv_os_free_group",
+      "callee": "uv__free"
+    },
+    {
+      "caller": "uv_udp_init",
+      "callee": "uv_udp_init_ex"
+    },
+    {
+      "caller": "uv_udp_send",
+      "callee": "uv__udp_check_before_send"
+    },
+    {
+      "caller": "uv_udp_try_send",
+      "callee": "uv__udp_check_before_send"
+    },
+    {
+      "caller": "uv_print_all_handles",
+      "callee": "uv__print_handles"
+    },
+    {
+      "caller": "uv_print_active_handles",
+      "callee": "uv__print_handles"
+    },
+    {
+      "caller": "uv_recv_buffer_size",
+      "callee": "uv__socket_sockopt"
+    },
+    {
+      "caller": "uv_send_buffer_size",
+      "callee": "uv__socket_sockopt"
+    },
+    {
+      "caller": "uv_fs_scandir_next",
+      "callee": "uv__fs_get_dirent_type"
+    },
+    {
+      "caller": "uv__fs_readdir_cleanup",
+      "callee": "uv__free"
+    },
+    {
+      "caller": "uv_loop_configure",
+      "callee": "uv__loop_configure"
+    },
+    {
+      "caller": "uv_loop_close",
+      "callee": "uv__loop_close"
+    },
+    {
+      "caller": "uv_loop_delete",
+      "callee": "uv_loop_close"
+    },
+    {
+      "caller": "uv_loop_delete",
+      "callee": "uv__free"
+    },
+    {
+      "caller": "uv_os_free_environ",
+      "callee": "uv__free"
+    },
+    {
+      "caller": "uv_free_cpu_info",
+      "callee": "uv__free"
+    },
+    {
+      "caller": "uv__metrics_update_idle_time",
+      "callee": "uv_hrtime"
+    },
+    {
+      "caller": "uv__metrics_set_provider_entry_time",
+      "callee": "uv_hrtime"
+    },
+    {
+      "caller": "uv_metrics_idle_time",
+      "callee": "uv_hrtime"
+    }
+  ],
+  "indirect_edges": [
+    {
+      "caller": "uv__fs_mkstemp",
+      "callee": "uv__mkostemp_initonce",
+      "kind": "callback_param"
+    },
+    {
+      "caller": "uv__fs_scandir",
+      "callee": "uv__fs_scandir_filter",
+      "kind": "callback_param"
+    },
+    {
+      "caller": "uv__fs_scandir",
+      "callee": "uv__fs_scandir_sort",
+      "kind": "callback_param"
+    },
+    {
+      "caller": "uv__fs_post",
+      "callee": "uv__fs_work",
+      "kind": "callback_param"
+    },
+    {
+      "caller": "uv__fs_post",
+      "callee": "uv__fs_done",
+      "kind": "callback_param"
+    }
+  ],
+  "expected_direct_count": 125,
+  "expected_indirect_count": 5
+}

@@ -1,0 +1,500 @@
+{
+  "project": "cJSON",
+  "version": "1.7.18",
+  "source_files": [
+    "cJSON.c"
+  ],
+  "direct_edges": [
+    {
+      "caller": "cJSON_GetStringValue",
+      "callee": "cJSON_IsString"
+    },
+    {
+      "caller": "cJSON_GetNumberValue",
+      "callee": "cJSON_IsNumber"
+    },
+    {
+      "caller": "cJSON_Delete",
+      "callee": "cJSON_Delete"
+    },
+    {
+      "caller": "parse_number",
+      "callee": "get_decimal_point"
+    },
+    {
+      "caller": "cJSON_SetValuestring",
+      "callee": "cJSON_free"
+    },
+    {
+      "caller": "print_number",
+      "callee": "get_decimal_point"
+    },
+    {
+      "caller": "print_number",
+      "callee": "compare_double"
+    },
+    {
+      "caller": "utf16_literal_to_utf8",
+      "callee": "parse_hex4"
+    },
+    {
+      "caller": "parse_string",
+      "callee": "utf16_literal_to_utf8"
+    },
+    {
+      "caller": "print_string",
+      "callee": "print_string_ptr"
+    },
+    {
+      "caller": "cJSON_ParseWithOpts",
+      "callee": "cJSON_ParseWithLengthOpts"
+    },
+    {
+      "caller": "cJSON_ParseWithLengthOpts",
+      "callee": "parse_value"
+    },
+    {
+      "caller": "cJSON_ParseWithLengthOpts",
+      "callee": "cJSON_Delete"
+    },
+    {
+      "caller": "cJSON_Parse",
+      "callee": "cJSON_ParseWithOpts"
+    },
+    {
+      "caller": "cJSON_ParseWithLength",
+      "callee": "cJSON_ParseWithLengthOpts"
+    },
+    {
+      "caller": "cJSON_PrintBuffered",
+      "callee": "print_value"
+    },
+    {
+      "caller": "cJSON_PrintPreallocated",
+      "callee": "print_value"
+    },
+    {
+      "caller": "parse_value",
+      "callee": "parse_string"
+    },
+    {
+      "caller": "parse_value",
+      "callee": "parse_number"
+    },
+    {
+      "caller": "parse_value",
+      "callee": "parse_array"
+    },
+    {
+      "caller": "parse_value",
+      "callee": "parse_object"
+    },
+    {
+      "caller": "print_value",
+      "callee": "print_number"
+    },
+    {
+      "caller": "print_value",
+      "callee": "print_string"
+    },
+    {
+      "caller": "print_value",
+      "callee": "print_array"
+    },
+    {
+      "caller": "print_value",
+      "callee": "print_object"
+    },
+    {
+      "caller": "parse_array",
+      "callee": "parse_value"
+    },
+    {
+      "caller": "parse_array",
+      "callee": "cJSON_Delete"
+    },
+    {
+      "caller": "print_array",
+      "callee": "print_value"
+    },
+    {
+      "caller": "print_array",
+      "callee": "update_offset"
+    },
+    {
+      "caller": "parse_object",
+      "callee": "parse_string"
+    },
+    {
+      "caller": "parse_object",
+      "callee": "parse_value"
+    },
+    {
+      "caller": "parse_object",
+      "callee": "cJSON_Delete"
+    },
+    {
+      "caller": "print_object",
+      "callee": "print_string_ptr"
+    },
+    {
+      "caller": "print_object",
+      "callee": "update_offset"
+    },
+    {
+      "caller": "print_object",
+      "callee": "print_value"
+    },
+    {
+      "caller": "cJSON_HasObjectItem",
+      "callee": "cJSON_GetObjectItem"
+    },
+    {
+      "caller": "add_item_to_array",
+      "callee": "suffix_object"
+    },
+    {
+      "caller": "cJSON_AddItemToArray",
+      "callee": "add_item_to_array"
+    },
+    {
+      "caller": "add_item_to_object",
+      "callee": "add_item_to_array"
+    },
+    {
+      "caller": "cJSON_AddItemToObject",
+      "callee": "add_item_to_object"
+    },
+    {
+      "caller": "cJSON_AddItemToObjectCS",
+      "callee": "add_item_to_object"
+    },
+    {
+      "caller": "cJSON_AddItemReferenceToArray",
+      "callee": "add_item_to_array"
+    },
+    {
+      "caller": "cJSON_AddItemReferenceToObject",
+      "callee": "add_item_to_object"
+    },
+    {
+      "caller": "cJSON_AddNullToObject",
+      "callee": "cJSON_CreateNull"
+    },
+    {
+      "caller": "cJSON_AddNullToObject",
+      "callee": "add_item_to_object"
+    },
+    {
+      "caller": "cJSON_AddNullToObject",
+      "callee": "cJSON_Delete"
+    },
+    {
+      "caller": "cJSON_AddTrueToObject",
+      "callee": "cJSON_CreateTrue"
+    },
+    {
+      "caller": "cJSON_AddTrueToObject",
+      "callee": "add_item_to_object"
+    },
+    {
+      "caller": "cJSON_AddTrueToObject",
+      "callee": "cJSON_Delete"
+    },
+    {
+      "caller": "cJSON_AddFalseToObject",
+      "callee": "cJSON_CreateFalse"
+    },
+    {
+      "caller": "cJSON_AddFalseToObject",
+      "callee": "add_item_to_object"
+    },
+    {
+      "caller": "cJSON_AddFalseToObject",
+      "callee": "cJSON_Delete"
+    },
+    {
+      "caller": "cJSON_AddBoolToObject",
+      "callee": "cJSON_CreateBool"
+    },
+    {
+      "caller": "cJSON_AddBoolToObject",
+      "callee": "add_item_to_object"
+    },
+    {
+      "caller": "cJSON_AddBoolToObject",
+      "callee": "cJSON_Delete"
+    },
+    {
+      "caller": "cJSON_AddNumberToObject",
+      "callee": "cJSON_CreateNumber"
+    },
+    {
+      "caller": "cJSON_AddNumberToObject",
+      "callee": "add_item_to_object"
+    },
+    {
+      "caller": "cJSON_AddNumberToObject",
+      "callee": "cJSON_Delete"
+    },
+    {
+      "caller": "cJSON_AddStringToObject",
+      "callee": "cJSON_CreateString"
+    },
+    {
+      "caller": "cJSON_AddStringToObject",
+      "callee": "add_item_to_object"
+    },
+    {
+      "caller": "cJSON_AddStringToObject",
+      "callee": "cJSON_Delete"
+    },
+    {
+      "caller": "cJSON_AddRawToObject",
+      "callee": "cJSON_CreateRaw"
+    },
+    {
+      "caller": "cJSON_AddRawToObject",
+      "callee": "add_item_to_object"
+    },
+    {
+      "caller": "cJSON_AddRawToObject",
+      "callee": "cJSON_Delete"
+    },
+    {
+      "caller": "cJSON_AddObjectToObject",
+      "callee": "cJSON_CreateObject"
+    },
+    {
+      "caller": "cJSON_AddObjectToObject",
+      "callee": "add_item_to_object"
+    },
+    {
+      "caller": "cJSON_AddObjectToObject",
+      "callee": "cJSON_Delete"
+    },
+    {
+      "caller": "cJSON_AddArrayToObject",
+      "callee": "cJSON_CreateArray"
+    },
+    {
+      "caller": "cJSON_AddArrayToObject",
+      "callee": "add_item_to_object"
+    },
+    {
+      "caller": "cJSON_AddArrayToObject",
+      "callee": "cJSON_Delete"
+    },
+    {
+      "caller": "cJSON_DetachItemFromArray",
+      "callee": "cJSON_DetachItemViaPointer"
+    },
+    {
+      "caller": "cJSON_DeleteItemFromArray",
+      "callee": "cJSON_Delete"
+    },
+    {
+      "caller": "cJSON_DeleteItemFromArray",
+      "callee": "cJSON_DetachItemFromArray"
+    },
+    {
+      "caller": "cJSON_DetachItemFromObject",
+      "callee": "cJSON_GetObjectItem"
+    },
+    {
+      "caller": "cJSON_DetachItemFromObject",
+      "callee": "cJSON_DetachItemViaPointer"
+    },
+    {
+      "caller": "cJSON_DetachItemFromObjectCaseSensitive",
+      "callee": "cJSON_GetObjectItemCaseSensitive"
+    },
+    {
+      "caller": "cJSON_DetachItemFromObjectCaseSensitive",
+      "callee": "cJSON_DetachItemViaPointer"
+    },
+    {
+      "caller": "cJSON_DeleteItemFromObject",
+      "callee": "cJSON_Delete"
+    },
+    {
+      "caller": "cJSON_DeleteItemFromObject",
+      "callee": "cJSON_DetachItemFromObject"
+    },
+    {
+      "caller": "cJSON_DeleteItemFromObjectCaseSensitive",
+      "callee": "cJSON_Delete"
+    },
+    {
+      "caller": "cJSON_DeleteItemFromObjectCaseSensitive",
+      "callee": "cJSON_DetachItemFromObjectCaseSensitive"
+    },
+    {
+      "caller": "cJSON_InsertItemInArray",
+      "callee": "add_item_to_array"
+    },
+    {
+      "caller": "cJSON_ReplaceItemViaPointer",
+      "callee": "cJSON_Delete"
+    },
+    {
+      "caller": "cJSON_ReplaceItemInArray",
+      "callee": "cJSON_ReplaceItemViaPointer"
+    },
+    {
+      "caller": "replace_item_in_object",
+      "callee": "cJSON_free"
+    },
+    {
+      "caller": "replace_item_in_object",
+      "callee": "cJSON_ReplaceItemViaPointer"
+    },
+    {
+      "caller": "cJSON_ReplaceItemInObject",
+      "callee": "replace_item_in_object"
+    },
+    {
+      "caller": "cJSON_ReplaceItemInObjectCaseSensitive",
+      "callee": "replace_item_in_object"
+    },
+    {
+      "caller": "cJSON_CreateString",
+      "callee": "cJSON_Delete"
+    },
+    {
+      "caller": "cJSON_CreateRaw",
+      "callee": "cJSON_Delete"
+    },
+    {
+      "caller": "cJSON_CreateIntArray",
+      "callee": "cJSON_CreateArray"
+    },
+    {
+      "caller": "cJSON_CreateIntArray",
+      "callee": "cJSON_CreateNumber"
+    },
+    {
+      "caller": "cJSON_CreateIntArray",
+      "callee": "cJSON_Delete"
+    },
+    {
+      "caller": "cJSON_CreateIntArray",
+      "callee": "suffix_object"
+    },
+    {
+      "caller": "cJSON_CreateFloatArray",
+      "callee": "cJSON_CreateArray"
+    },
+    {
+      "caller": "cJSON_CreateFloatArray",
+      "callee": "cJSON_CreateNumber"
+    },
+    {
+      "caller": "cJSON_CreateFloatArray",
+      "callee": "cJSON_Delete"
+    },
+    {
+      "caller": "cJSON_CreateFloatArray",
+      "callee": "suffix_object"
+    },
+    {
+      "caller": "cJSON_CreateDoubleArray",
+      "callee": "cJSON_CreateArray"
+    },
+    {
+      "caller": "cJSON_CreateDoubleArray",
+      "callee": "cJSON_CreateNumber"
+    },
+    {
+      "caller": "cJSON_CreateDoubleArray",
+      "callee": "cJSON_Delete"
+    },
+    {
+      "caller": "cJSON_CreateDoubleArray",
+      "callee": "suffix_object"
+    },
+    {
+      "caller": "cJSON_CreateStringArray",
+      "callee": "cJSON_CreateArray"
+    },
+    {
+      "caller": "cJSON_CreateStringArray",
+      "callee": "cJSON_CreateString"
+    },
+    {
+      "caller": "cJSON_CreateStringArray",
+      "callee": "cJSON_Delete"
+    },
+    {
+      "caller": "cJSON_CreateStringArray",
+      "callee": "suffix_object"
+    },
+    {
+      "caller": "cJSON_Duplicate",
+      "callee": "cJSON_Duplicate"
+    },
+    {
+      "caller": "cJSON_Duplicate",
+      "callee": "cJSON_Delete"
+    },
+    {
+      "caller": "cJSON_Minify",
+      "callee": "skip_oneline_comment"
+    },
+    {
+      "caller": "cJSON_Minify",
+      "callee": "skip_multiline_comment"
+    },
+    {
+      "caller": "cJSON_Minify",
+      "callee": "minify_string"
+    },
+    {
+      "caller": "cJSON_Compare",
+      "callee": "compare_double"
+    },
+    {
+      "caller": "cJSON_Compare",
+      "callee": "cJSON_Compare"
+    }
+  ],
+  "indirect_edges": [
+    {
+      "caller": "<unknown>",
+      "callee": "internal_free",
+      "kind": "vtable"
+    },
+    {
+      "caller": "cJSON_Delete",
+      "callee": "internal_free",
+      "kind": "vtable"
+    },
+    {
+      "caller": "parse_string",
+      "callee": "internal_free",
+      "kind": "vtable"
+    },
+    {
+      "caller": "cJSON_PrintBuffered",
+      "callee": "internal_free",
+      "kind": "vtable"
+    },
+    {
+      "caller": "add_item_to_object",
+      "callee": "internal_free",
+      "kind": "vtable"
+    },
+    {
+      "caller": "cJSON_malloc",
+      "callee": "internal_free",
+      "kind": "vtable"
+    },
+    {
+      "caller": "cJSON_free",
+      "callee": "internal_free",
+      "kind": "vtable"
+    }
+  ],
+  "expected_direct_count": 113,
+  "expected_indirect_count": 7
+}
