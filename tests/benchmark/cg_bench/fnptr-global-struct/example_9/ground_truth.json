@@ -1,0 +1,8 @@
+{
+  "examples": [
+    {
+      "caller": "input_ssa_names",
+      "callee": "lto_input_tree"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "examples": [
+    {
+      "caller": "lj_mem_free",
+      "callee": "l_alloc"
+    },
+    {
+      "caller": "lj_mem_free",
+      "callee": "lj_alloc_f"
+    }
+  ]
+}

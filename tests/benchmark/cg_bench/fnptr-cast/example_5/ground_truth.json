@@ -1,0 +1,8 @@
+{
+  "examples": [
+    {
+      "caller": "memory_caller",
+      "callee": "__gmp_asprintf_memory"
+    }
+  ]
+}

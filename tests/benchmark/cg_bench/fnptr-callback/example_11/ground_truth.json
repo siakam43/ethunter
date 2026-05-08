@@ -1,0 +1,8 @@
+{
+  "examples": [
+    {
+      "caller": "xor_block_caller",
+      "callee": "aes_xor_block"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "examples": [
+    {
+      "caller": "raw_decode",
+      "callee": "bswap16_buf"
+    },
+    {
+      "caller": "raw_decode",
+      "callee": "ff_bswap16_buf_rvv"
+    }
+  ]
+}

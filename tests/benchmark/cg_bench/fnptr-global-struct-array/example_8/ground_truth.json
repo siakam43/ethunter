@@ -1,0 +1,8 @@
+{
+  "examples": [
+    {
+      "caller": "ddt_object_lookup",
+      "callee": "ddt_zap_lookup"
+    }
+  ]
+}

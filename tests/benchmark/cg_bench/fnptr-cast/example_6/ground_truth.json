@@ -1,0 +1,12 @@
+{
+  "examples": [
+    {
+      "caller": "dsl_dataset_user_release_sync",
+      "callee": "dsl_dataset_hold"
+    },
+    {
+      "caller": "dsl_dataset_user_release_sync",
+      "callee": "dsl_dataset_hold_obj_string"
+    }
+  ]
+}

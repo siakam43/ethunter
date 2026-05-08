@@ -1,0 +1,12 @@
+{
+  "examples": [
+    {
+      "caller": "speex_decode_frame",
+      "callee": "nb_decode"
+    },
+    {
+      "caller": "speex_decode_frame",
+      "callee": "sb_decode"
+    }
+  ]
+}

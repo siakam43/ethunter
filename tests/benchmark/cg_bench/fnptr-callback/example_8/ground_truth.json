@@ -1,0 +1,16 @@
+{
+  "examples": [
+    {
+      "caller": "cmp_caller",
+      "callee": "sort_gp_asc"
+    },
+    {
+      "caller": "cmp_caller",
+      "callee": "sort_gp_desc"
+    },
+    {
+      "caller": "cmp_caller",
+      "callee": "sortCompare"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "examples": [
+    {
+      "caller": "genericZrangebyrankCommand",
+      "callee": "zrangeResultFinalizeClient"
+    },
+    {
+      "caller": "genericZrangebyrankCommand",
+      "callee": "zrangeResultFinalizeStore"
+    }
+  ]
+}

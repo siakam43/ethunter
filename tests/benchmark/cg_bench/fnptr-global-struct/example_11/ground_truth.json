@@ -1,0 +1,8 @@
+{
+  "examples": [
+    {
+      "caller": "ssh_ed25519_sk_serialize_public",
+      "callee": "ssh_ed25519_serialize_public"
+    }
+  ]
+}

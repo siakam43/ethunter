@@ -1,0 +1,8 @@
+{
+  "examples": [
+    {
+      "caller": "CRYPTO_gcm128_encrypt",
+      "callee": "aesni_encrypt"
+    }
+  ]
+}

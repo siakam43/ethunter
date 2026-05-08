@@ -1,0 +1,12 @@
+{
+  "examples": [
+    {
+      "caller": "hash_caller",
+      "callee": "Curl_md5it"
+    },
+    {
+      "caller": "hash_caller",
+      "callee": "Curl_sha256it"
+    }
+  ]
+}

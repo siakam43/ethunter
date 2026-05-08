@@ -1,0 +1,8 @@
+{
+  "examples": [
+    {
+      "caller": "Curl_cfree_caller",
+      "callee": "malloc"
+    }
+  ]
+}

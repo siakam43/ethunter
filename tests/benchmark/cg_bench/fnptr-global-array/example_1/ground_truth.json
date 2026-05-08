@@ -1,0 +1,80 @@
+{
+  "examples": [
+    {
+      "caller": "dump_object",
+      "callee": "dump_acl"
+    },
+    {
+      "caller": "dump_object",
+      "callee": "dump_bpobj"
+    },
+    {
+      "caller": "dump_object",
+      "callee": "dump_bpobj_subobjs"
+    },
+    {
+      "caller": "dump_object",
+      "callee": "dump_ddt_zap"
+    },
+    {
+      "caller": "dump_object",
+      "callee": "dump_dmu_objset"
+    },
+    {
+      "caller": "dump_object",
+      "callee": "dump_dnode"
+    },
+    {
+      "caller": "dump_object",
+      "callee": "dump_dsl_dataset"
+    },
+    {
+      "caller": "dump_object",
+      "callee": "dump_dsl_dir"
+    },
+    {
+      "caller": "dump_object",
+      "callee": "dump_history_offsets"
+    },
+    {
+      "caller": "dump_object",
+      "callee": "dump_none"
+    },
+    {
+      "caller": "dump_object",
+      "callee": "dump_packed_nvlist"
+    },
+    {
+      "caller": "dump_object",
+      "callee": "dump_sa_attrs"
+    },
+    {
+      "caller": "dump_object",
+      "callee": "dump_sa_layouts"
+    },
+    {
+      "caller": "dump_object",
+      "callee": "dump_uint64"
+    },
+    {
+      "caller": "dump_object",
+      "callee": "dump_uint8"
+    },
+    {
+      "caller": "dump_object",
+      "callee": "dump_unknown"
+    },
+    {
+      "caller": "dump_object",
+      "callee": "dump_zap"
+    },
+    {
+      "caller": "dump_object",
+      "callee": "dump_znode"
+    },
+    {
+      "caller": "dump_object",
+      "callee": "dump_zpldir"
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "examples": [
+    {
+      "caller": "valueize_caller",
+      "callee": "pta_valueize"
+    },
+    {
+      "caller": "valueize_caller",
+      "callee": "threadedge_valueize"
+    },
+    {
+      "caller": "valueize_caller",
+      "callee": "vn_valueize"
+    },
+    {
+      "caller": "valueize_caller",
+      "callee": "dom_valueize"
+    },
+    {
+      "caller": "valueize_caller",
+      "callee": "valueize_val"
+    },
+    {
+      "caller": "valueize_caller",
+      "callee": "valueize_op"
+    },
+    {
+      "caller": "valueize_caller",
+      "callee": "do_valueize"
+    }
+  ]
+}

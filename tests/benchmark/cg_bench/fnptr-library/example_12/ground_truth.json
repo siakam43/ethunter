@@ -1,0 +1,12 @@
+{
+  "examples": [
+    {
+      "caller": "filter_frame",
+      "callee": "vectorscope8"
+    },
+    {
+      "caller": "filter_frame",
+      "callee": "vectorscope16"
+    }
+  ]
+}

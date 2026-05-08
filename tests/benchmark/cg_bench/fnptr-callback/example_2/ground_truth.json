@@ -1,0 +1,12 @@
+{
+  "examples": [
+    {
+      "caller": "fmt_caller",
+      "callee": "format_time_us"
+    },
+    {
+      "caller": "fmt_caller",
+      "callee": "format_metric"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "examples": [
+    {
+      "caller": "ssl3_write_bytes",
+      "callee": "ossl_statem_accept"
+    },
+    {
+      "caller": "ssl3_write_bytes",
+      "callee": "ossl_statem_connect"
+    }
+  ]
+}

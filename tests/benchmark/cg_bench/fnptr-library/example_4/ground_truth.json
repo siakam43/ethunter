@@ -1,0 +1,12 @@
+{
+  "examples": [
+    {
+      "caller": "channel_handle_rfd",
+      "callee": "client_simple_escape_filter"
+    },
+    {
+      "caller": "channel_handle_rfd",
+      "callee": "sys_tun_infilter"
+    }
+  ]
+}

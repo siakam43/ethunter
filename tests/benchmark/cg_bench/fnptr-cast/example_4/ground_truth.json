@@ -1,0 +1,8 @@
+{
+  "examples": [
+    {
+      "caller": "md5_update_func_caller",
+      "callee": "my_md5_update"
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "examples": [
+    {
+      "caller": "put_cipher_by_char_caller",
+      "callee": "ssl3_put_cipher_by_char"
+    }
+  ]
+}

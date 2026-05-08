@@ -1,0 +1,12 @@
+{
+  "examples": [
+    {
+      "caller": "search_for_quantizers_fast",
+      "callee": "ff_abs_pow34_sse"
+    },
+    {
+      "caller": "search_for_quantizers_fast",
+      "callee": "abs_pow34_v"
+    }
+  ]
+}

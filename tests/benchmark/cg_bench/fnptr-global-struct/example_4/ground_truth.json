@@ -1,0 +1,232 @@
+{
+  "examples": [
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_clear"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_clear_fault"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_dataset_list_next"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_destroy"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_diff"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_dsobj_to_dsname"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_error_log"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_events_clear"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_events_next"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_events_seek"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_get_fsacl"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_inherit_prop"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_inject_fault"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_inject_list_next"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_next_obj"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_obj_to_path"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_obj_to_stats"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_objset_recvd_props"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_objset_stats"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_objset_zplprops"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_pool_configs"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_pool_create"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_pool_destroy"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_pool_export"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_pool_freeze"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_pool_get_history"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_pool_get_props"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_pool_import"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_pool_reguid"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_pool_scan"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_pool_set_props"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_pool_stats"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_pool_tryimport"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_pool_upgrade"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_promote"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_recv"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_rename"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_send"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_send_progress"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_set_fsacl"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_set_prop"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_share"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_smb_acl"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_snapshot_list_next"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_space_written"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_tmp_snapshot"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_userspace_many"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_userspace_one"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_userspace_upgrade"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_vdev_add"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_vdev_attach"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_vdev_detach"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_vdev_remove"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_vdev_set_state"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_vdev_setfru"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_vdev_setpath"
+    },
+    {
+      "caller": "zfsdev_ioctl_common",
+      "callee": "zfs_ioc_vdev_split"
+    }
+  ]
+}

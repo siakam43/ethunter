@@ -1,0 +1,16 @@
+{
+  "examples": [
+    {
+      "caller": "mstate",
+      "callee": "Curl_init_CONNECT"
+    },
+    {
+      "caller": "mstate",
+      "callee": "before_perform"
+    },
+    {
+      "caller": "mstate",
+      "callee": "init_completed"
+    }
+  ]
+}

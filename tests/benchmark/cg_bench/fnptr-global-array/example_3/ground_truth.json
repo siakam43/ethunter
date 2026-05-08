@@ -1,0 +1,28 @@
+{
+  "examples": [
+    {
+      "caller": "ass_split_section",
+      "callee": "convert_str"
+    },
+    {
+      "caller": "ass_split_section",
+      "callee": "convert_int"
+    },
+    {
+      "caller": "ass_split_section",
+      "callee": "convert_flt"
+    },
+    {
+      "caller": "ass_split_section",
+      "callee": "convert_color"
+    },
+    {
+      "caller": "ass_split_section",
+      "callee": "convert_timestamp"
+    },
+    {
+      "caller": "ass_split_section",
+      "callee": "convert_alignment"
+    }
+  ]
+}

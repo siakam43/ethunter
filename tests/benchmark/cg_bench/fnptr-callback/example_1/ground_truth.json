@@ -1,0 +1,12 @@
+{
+  "examples": [
+    {
+      "caller": "convert_to_ascii_caller",
+      "callee": "auth_digest_md5_to_ascii"
+    },
+    {
+      "caller": "convert_to_ascii_caller",
+      "callee": "auth_digest_sha256_to_ascii"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "examples": [
+    {
+      "caller": "strdup_caller",
+      "callee": "Curl_strdup"
+    },
+    {
+      "caller": "strdup_caller",
+      "callee": "strdup"
+    }
+  ]
+}

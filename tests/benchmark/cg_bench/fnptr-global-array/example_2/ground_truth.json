@@ -1,0 +1,44 @@
+{
+  "examples": [
+    {
+      "caller": "quantize_and_encode_band",
+      "callee": "quantize_and_encode_band_cost_ZERO"
+    },
+    {
+      "caller": "quantize_and_encode_band",
+      "callee": "quantize_and_encode_band_cost_SQUAD"
+    },
+    {
+      "caller": "quantize_and_encode_band",
+      "callee": "quantize_and_encode_band_cost_UQUAD"
+    },
+    {
+      "caller": "quantize_and_encode_band",
+      "callee": "quantize_and_encode_band_cost_SPAIR"
+    },
+    {
+      "caller": "quantize_and_encode_band",
+      "callee": "quantize_and_encode_band_cost_UPAIR"
+    },
+    {
+      "caller": "quantize_and_encode_band",
+      "callee": "quantize_and_encode_band_cost_ESC"
+    },
+    {
+      "caller": "quantize_and_encode_band",
+      "callee": "quantize_and_encode_band_cost_NONE"
+    },
+    {
+      "caller": "quantize_and_encode_band",
+      "callee": "quantize_and_encode_band_cost_NOISE"
+    },
+    {
+      "caller": "quantize_and_encode_band",
+      "callee": "quantize_and_encode_band_cost_STEREO"
+    },
+    {
+      "caller": "quantize_and_encode_band",
+      "callee": "quantize_and_encode_band_cost_ESC_RTZ"
+    }
+  ]
+}

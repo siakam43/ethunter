@@ -1,0 +1,8 @@
+{
+  "examples": [
+    {
+      "caller": "processTimeEvents",
+      "callee": "record_rate"
+    }
+  ]
+}

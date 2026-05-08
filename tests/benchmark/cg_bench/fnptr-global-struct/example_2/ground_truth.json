@@ -1,0 +1,8 @@
+{
+  "examples": [
+    {
+      "caller": "Curl_pin_peer_pubkey",
+      "callee": "ossl_sha256sum"
+    }
+  ]
+}

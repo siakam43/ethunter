@@ -1,0 +1,8 @@
+{
+  "examples": [
+    {
+      "caller": "Curl_conn_get_host",
+      "callee": "cf_socket_get_host"
+    }
+  ]
+}

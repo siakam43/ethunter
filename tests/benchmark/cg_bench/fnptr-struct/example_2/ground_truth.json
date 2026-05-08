@@ -1,0 +1,8 @@
+{
+  "examples": [
+    {
+      "caller": "cpp_pop_definition",
+      "callee": "dump_queued_macros"
+    }
+  ]
+}

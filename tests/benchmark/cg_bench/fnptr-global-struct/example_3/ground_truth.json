@@ -1,0 +1,8 @@
+{
+  "examples": [
+    {
+      "caller": "pubsubSubscribeChannel",
+      "callee": "getClientPubSubChannels"
+    }
+  ]
+}

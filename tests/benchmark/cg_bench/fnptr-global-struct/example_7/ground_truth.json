@@ -1,0 +1,12 @@
+{
+  "examples": [
+    {
+      "caller": "zfs_acl_chmod",
+      "callee": "zfs_ace_v0_size"
+    },
+    {
+      "caller": "zfs_acl_chmod",
+      "callee": "zfs_ace_fuid_size"
+    }
+  ]
+}

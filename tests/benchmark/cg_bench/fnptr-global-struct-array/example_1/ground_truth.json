@@ -1,0 +1,20 @@
+{
+  "examples": [
+    {
+      "caller": "setter_caller",
+      "callee": "auxShardIdSetter"
+    },
+    {
+      "caller": "setter_caller",
+      "callee": "auxHumanNodenameSetter"
+    },
+    {
+      "caller": "setter_caller",
+      "callee": "auxTcpPortSetter"
+    },
+    {
+      "caller": "setter_caller",
+      "callee": "auxTlsPortSetter"
+    }
+  ]
+}

@@ -1,0 +1,56 @@
+{
+  "examples": [
+    {
+      "caller": "decode_init",
+      "callee": "trc_bt709"
+    },
+    {
+      "caller": "decode_init",
+      "callee": "trc_gamma22"
+    },
+    {
+      "caller": "decode_init",
+      "callee": "trc_gamma28"
+    },
+    {
+      "caller": "decode_init",
+      "callee": "trc_smpte240M"
+    },
+    {
+      "caller": "decode_init",
+      "callee": "trc_linear"
+    },
+    {
+      "caller": "decode_init",
+      "callee": "trc_log"
+    },
+    {
+      "caller": "decode_init",
+      "callee": "trc_log_sqrt"
+    },
+    {
+      "caller": "decode_init",
+      "callee": "trc_iec61966_2_4"
+    },
+    {
+      "caller": "decode_init",
+      "callee": "trc_bt1361"
+    },
+    {
+      "caller": "decode_init",
+      "callee": "trc_iec61966_2_1"
+    },
+    {
+      "caller": "decode_init",
+      "callee": "trc_smpte_st2084"
+    },
+    {
+      "caller": "decode_init",
+      "callee": "trc_smpte_st428_1"
+    },
+    {
+      "caller": "decode_init",
+      "callee": "trc_arib_std_b67"
+    }
+  ]
+}

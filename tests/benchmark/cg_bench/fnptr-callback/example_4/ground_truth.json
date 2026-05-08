@@ -1,0 +1,12 @@
+{
+  "examples": [
+    {
+      "caller": "x_caller",
+      "callee": "av_codec_is_decoder"
+    },
+    {
+      "caller": "x_caller",
+      "callee": "av_codec_is_encoder"
+    }
+  ]
+}

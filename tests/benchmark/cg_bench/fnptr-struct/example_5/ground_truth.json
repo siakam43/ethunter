@@ -1,0 +1,24 @@
+{
+  "examples": [
+    {
+      "caller": "iterate_through_spacemap_logs_cb",
+      "callee": "spacemap_check_sm_log_cb"
+    },
+    {
+      "caller": "iterate_through_spacemap_logs_cb",
+      "callee": "load_unflushed_cb"
+    },
+    {
+      "caller": "iterate_through_spacemap_logs_cb",
+      "callee": "load_unflushed_svr_segs_cb"
+    },
+    {
+      "caller": "iterate_through_spacemap_logs_cb",
+      "callee": "count_unflushed_space_cb"
+    },
+    {
+      "caller": "iterate_through_spacemap_logs_cb",
+      "callee": "log_spacemap_obsolete_stats_cb"
+    }
+  ]
+}

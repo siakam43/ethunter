@@ -1,0 +1,8 @@
+{
+  "examples": [
+    {
+      "caller": "onload_caller",
+      "callee": "RedisModule_OnLoad"
+    }
+  ]
+}

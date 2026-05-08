@@ -1,0 +1,12 @@
+{
+  "examples": [
+    {
+      "caller": "get_crl_delta",
+      "callee": "crls_http_cb"
+    },
+    {
+      "caller": "get_crl_delta",
+      "callee": "X509_STORE_CTX_get1_crls"
+    }
+  ]
+}

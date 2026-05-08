@@ -1,0 +1,8 @@
+{
+  "examples": [
+    {
+      "caller": "claim_segment_cb",
+      "callee": "vdev_indirect_remap"
+    }
+  ]
+}

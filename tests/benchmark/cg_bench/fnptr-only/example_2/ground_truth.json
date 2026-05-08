@@ -1,0 +1,8 @@
+{
+  "examples": [
+    {
+      "caller": "Curl_ccalloc_caller",
+      "callee": "calloc"
+    }
+  ]
+}
