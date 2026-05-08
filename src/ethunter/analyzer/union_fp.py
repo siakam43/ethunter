@@ -7,6 +7,7 @@ import tree_sitter as ts
 from ethunter.graph.model import CallEdge, CallType
 from ethunter.analyzer.dataflow import VariableState
 from ethunter.analyzer.symbol_table import SymbolTable
+from ethunter.analyzer.helpers import find_enclosing_function, find_child
 
 
 def analyze(
@@ -19,6 +20,16 @@ def analyze(
     edges: list[CallEdge] = []
     symbol_names = symbol_table.all_function_names
 
+    def _extract_field_path(node: ts.Node) -> str | None:
+        """Extract 'union_name.member_name' from a field_expression."""
+        if node.type == 'field_expression':
+            parts = []
+            for child in node.children:
+                if child.type in ('identifier', 'field_identifier') and child.text:
+                    parts.append(child.text.decode('utf-8'))
+            return '.'.join(parts) if parts else None
+        return None
+
     def _visit(node: ts.Node) -> None:
         # Track union member assignments: a.sa = act_simple
         if node.type == 'assignment_expression':
@@ -27,7 +38,12 @@ def analyze(
             if lhs and rhs and lhs.type == 'field_expression' and rhs.type == 'identifier' and rhs.text:
                 target = rhs.text.decode('utf-8')
                 if target in symbol_names:
-                    dataflow.assign('<union_init>', target)
+                    field_path = _extract_field_path(lhs)
+                    if field_path:
+                        dataflow.assign(f'<union:{field_path}>', target)
+                    else:
+                        field_name = lhs.children[-1].text.decode('utf-8') if lhs.children else 'unknown'
+                        dataflow.assign(f'<union:{field_name}>', target)
         if node.type == 'initializer_list':
             for child in node.children:
                 if child.type == 'identifier' and child.text:
@@ -37,8 +53,16 @@ def analyze(
         if node.type == 'call_expression':
             func_node = node.child_by_field_name('function') or node.children[0]
             if func_node and func_node.type == 'field_expression':
-                caller = _find_enclosing_function(node, tree.root_node)
-                targets = dataflow.resolve('<union_init>')
+                caller = find_enclosing_function(node, tree.root_node)
+                # Try union_name.member lookup first
+                field_path = _extract_field_path(func_node)
+                if field_path:
+                    targets = dataflow.resolve(f'<union:{field_path}>')
+                else:
+                    targets = set()
+                # Fallback to global initializer list
+                if not targets:
+                    targets = dataflow.resolve('<union_init>')
                 for target in targets:
                     edges.append(CallEdge(
                         caller=caller or '<unknown>',
@@ -55,24 +79,3 @@ def analyze(
     _visit(tree.root_node)
     return edges
 
-
-def _find_enclosing_function(node: ts.Node, root: ts.Node) -> str | None:
-    result = [None]
-    def _search(n: ts.Node, line: int) -> None:
-        if result[0] is not None: return
-        if n.type == 'function_definition':
-            decl = _find_child(n, 'function_declarator')
-            if decl:
-                ident = _find_child(decl, 'identifier')
-                if ident and ident.text:
-                    result[0] = ident.text.decode('utf-8')
-        for c in n.children:
-            if c.start_point[0] <= line <= c.end_point[0]:
-                _search(c, line)
-    _search(root, node.start_point[0])
-    return result[0]
-
-def _find_child(node: ts.Node, type_name: str) -> ts.Node | None:
-    for c in node.children:
-        if c.type == type_name: return c
-    return None

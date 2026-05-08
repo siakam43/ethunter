@@ -108,7 +108,7 @@ def test_cross_file_typedef_fp():
     for path, tree in trees.items():
         edges.extend(typedef_fp.analyze(tree, path, st, df))
     callees = {e.callee for e in edges}
-    assert 'process_a' in callees or 'process_b' in callees or len(edges) >= 0
+    assert 'process_a' in callees or 'process_b' in callees, f'Expected typedef_fp callees: {callees}'
 
 
 def test_cross_file_fp_alias():
@@ -146,4 +146,4 @@ def test_cross_file_dlsym_fp():
     for path, tree in trees.items():
         edges.extend(dlsym_fp.analyze(tree, path, st, df))
     callees = {e.callee for e in edges}
-    assert 'plugin_func_a' in callees or 'plugin_func_b' in callees or len(edges) >= 0
+    assert 'plugin_func_a' in callees or 'plugin_func_b' in callees, f'Expected dlsym_fp callees: {callees}'

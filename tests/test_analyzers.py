@@ -95,16 +95,16 @@ def test_typedef_fp():
     edges = typedef_fp.analyze(tree, 'typedef_fp.c', st, df)
     # Should find indirect calls to do_action or undo_action
     callee_names = {e.callee for e in edges}
-    assert 'do_action' in callee_names or 'undo_action' in callee_names or len(edges) >= 0, f'Edges: {[e.to_dict() for e in edges]}'
+    assert 'do_action' in callee_names or 'undo_action' in callee_names, f'Edges: {[e.to_dict() for e in edges]}'
 
 
 def test_fp_alias():
     from ethunter.analyzer import fp_alias
     tree, st, df = _make_analyzer_env('fp_alias.c')
     edges = fp_alias.analyze(tree, 'fp_alias.c', st, df)
-    # Should find indirect call to target_a or target_b
+    # Should find indirect call to target_a
     callee_names = {e.callee for e in edges}
-    assert len(edges) >= 0, f'Edges: {[e.to_dict() for e in edges]}'
+    assert 'target_a' in callee_names, f'Expected target_a: {[e.to_dict() for e in edges]}'
 
 
 def test_lazy_init():
@@ -272,3 +272,27 @@ def test_dlsym_fp_complex():
     edges = dlsym_fp.analyze(tree, 'dlsym_fp_complex.c', st, df)
     callees = {e.callee for e in edges}
     assert 'plugin_start' in callees, f'Expected dlsym edges: {callees}'
+
+
+# --- Edge case tests ---
+
+def test_long_alias_chain():
+    from ethunter.analyzer import fp_assign, fp_alias
+    tree, st, df = _make_analyzer_env('long_alias_chain.c')
+    edges = []
+    edges.extend(fp_assign.analyze(tree, 'long_alias_chain.c', st, df))
+    edges.extend(fp_alias.analyze(tree, 'long_alias_chain.c', st, df))
+    callees = {e.callee for e in edges}
+    assert 'target_func' in callees, f'Expected target_func in alias chain: {[e.to_dict() for e in edges]}'
+
+
+def test_macro_collision():
+    """Macro substring collision: macro body contains 'close' but shouldn't match close_file."""
+    from ethunter.analyzer import macro_fp
+    tree, st, df = _make_analyzer_env('macro_collision.c')
+    edges = macro_fp.analyze(tree, 'macro_collision.c', st, df)
+    callees = {e.callee for e in edges}
+    # HANDLE_CLOSE macro body is '((x) + 1)' — contains no function names
+    # So macro_fp should NOT emit edges for close_file or open_session via HANDLE_CLOSE
+    assert 'close_file' not in callees, f'Macro collision: close_file should not match HANDLE_CLOSE: {[e.to_dict() for e in edges]}'
+    assert 'open_session' not in callees, f'Macro collision: open_session should not match HANDLE_CLOSE'

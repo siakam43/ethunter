@@ -7,6 +7,11 @@ import tree_sitter as ts
 from ethunter.graph.model import CallEdge, CallType
 from ethunter.analyzer.dataflow import VariableState
 from ethunter.analyzer.symbol_table import SymbolTable
+from ethunter.analyzer.helpers import (
+    find_enclosing_function,
+    find_child,
+    handle_init_declarator,
+)
 
 
 def analyze(
@@ -25,7 +30,7 @@ def analyze(
             _handle_assignment(node, dataflow, symbol_names)
         # Track init_declarators: void (*fp)(void) = func_name
         elif node.type == 'init_declarator':
-            _handle_init_declarator(node, dataflow, symbol_names)
+            handle_init_declarator(node, dataflow, symbol_names)
         # Track calls through function pointers: fp()
         elif node.type == 'call_expression':
             func_node = node.child_by_field_name('function') or node.children[0]
@@ -33,7 +38,7 @@ def analyze(
                 var_name = func_node.text.decode('utf-8')
                 targets = dataflow.resolve(var_name)
                 if targets:
-                    caller = _find_enclosing_function(node, tree.root_node)
+                    caller = find_enclosing_function(node, tree.root_node)
                     for target in targets:
                         edges.append(CallEdge(
                             caller=caller or '<unknown>',
@@ -49,39 +54,6 @@ def analyze(
 
     _visit(tree.root_node)
     return edges
-
-
-def _handle_init_declarator(
-    node: ts.Node,
-    dataflow: VariableState,
-    symbol_names: set[str],
-) -> None:
-    """Handle init_declarators like void (*fp)(void) = func_name."""
-    declarator = node.child_by_field_name('declarator')
-    value = node.child_by_field_name('value')
-    if not declarator or not value:
-        return
-
-    if value.type == 'identifier' and value.text:
-        target = value.text.decode('utf-8')
-        var_name = _extract_identifier_from_declarator(declarator)
-        if var_name and target in symbol_names:
-            dataflow.assign(var_name, target)
-
-
-def _extract_identifier_from_declarator(declarator: ts.Node) -> str | None:
-    """Extract the variable name from a pointer/function-pointer declarator."""
-    if declarator.type == 'identifier' and declarator.text:
-        return declarator.text.decode('utf-8')
-    if declarator.type in ('parenthesized_declarator', 'function_declarator'):
-        for c in declarator.children:
-            if c.type not in ('(', ')', ';'):
-                result = _extract_identifier_from_declarator(c)
-                if result:
-                    return result
-    if declarator.type == 'pointer_declarator':
-        return _extract_identifier_from_declarator(declarator.children[-1])
-    return None
 
 
 def _handle_assignment(
@@ -109,29 +81,3 @@ def _handle_assignment(
                     for t in targets:
                         dataflow.assign(var_name, t)
 
-
-def _find_enclosing_function(node: ts.Node, root: ts.Node) -> str | None:
-    result = [None]
-
-    def _search(n: ts.Node, target_line: int) -> None:
-        if result[0] is not None:
-            return
-        if n.type == 'function_definition':
-            decl = _find_child(n, 'function_declarator')
-            if decl:
-                ident = _find_child(decl, 'identifier')
-                if ident and ident.text:
-                    result[0] = ident.text.decode('utf-8')
-        for child in n.children:
-            if child.start_point[0] <= target_line <= child.end_point[0]:
-                _search(child, target_line)
-
-    _search(root, node.start_point[0])
-    return result[0]
-
-
-def _find_child(node: ts.Node, type_name: str) -> ts.Node | None:
-    for child in node.children:
-        if child.type == type_name:
-            return child
-    return None

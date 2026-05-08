@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import re
 import tree_sitter as ts
 
 from ethunter.graph.model import CallEdge, CallType
 from ethunter.analyzer.dataflow import VariableState
 from ethunter.analyzer.symbol_table import SymbolTable
+from ethunter.analyzer.helpers import find_enclosing_function, find_child
 
 
 def analyze(
@@ -46,9 +48,9 @@ def analyze(
                 if call_name in macro_defs:
                     # This is a macro call - check if the macro body references known functions
                     macro_body = macro_defs[call_name]
-                    caller = _find_enclosing_function(node, tree.root_node)
+                    caller = find_enclosing_function(node, tree.root_node)
                     for sym in symbol_names:
-                        if sym in macro_body:
+                        if re.search(r'\b' + re.escape(sym) + r'\b', macro_body):
                             edges.append(CallEdge(
                                 caller=caller or f'<macro:{call_name}>',
                                 callee=sym,
@@ -79,25 +81,3 @@ def analyze(
 
     _visit(tree.root_node)
     return edges
-
-
-def _find_enclosing_function(node: ts.Node, root: ts.Node) -> str | None:
-    result = [None]
-    def _search(n: ts.Node, line: int) -> None:
-        if result[0] is not None: return
-        if n.type == 'function_definition':
-            decl = _find_child(n, 'function_declarator')
-            if decl:
-                ident = _find_child(decl, 'identifier')
-                if ident and ident.text:
-                    result[0] = ident.text.decode('utf-8')
-        for c in n.children:
-            if c.start_point[0] <= line <= c.end_point[0]:
-                _search(c, line)
-    _search(root, node.start_point[0])
-    return result[0]
-
-def _find_child(node: ts.Node, type_name: str) -> ts.Node | None:
-    for c in node.children:
-        if c.type == type_name: return c
-    return None

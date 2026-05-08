@@ -7,6 +7,7 @@ import tree_sitter as ts
 from ethunter.graph.model import CallEdge, CallType
 from ethunter.analyzer.dataflow import VariableState
 from ethunter.analyzer.symbol_table import SymbolTable
+from ethunter.analyzer.helpers import find_enclosing_function, find_child
 
 
 def analyze(
@@ -23,7 +24,7 @@ def analyze(
         if node.type == 'call_expression':
             args = node.child_by_field_name('arguments')
             if args:
-                caller = _find_enclosing_function(node, tree.root_node)
+                caller = find_enclosing_function(node, tree.root_node)
                 for arg in args.children:
                     if arg.type == 'identifier' and arg.text:
                         func_name = arg.text.decode('utf-8')
@@ -44,29 +45,3 @@ def analyze(
     _visit(tree.root_node)
     return edges
 
-
-def _find_enclosing_function(node: ts.Node, root: ts.Node) -> str | None:
-    result = [None]
-
-    def _search(n: ts.Node, target_line: int) -> None:
-        if result[0] is not None:
-            return
-        if n.type == 'function_definition':
-            decl = _find_child(n, 'function_declarator')
-            if decl:
-                ident = _find_child(decl, 'identifier')
-                if ident and ident.text:
-                    result[0] = ident.text.decode('utf-8')
-        for child in n.children:
-            if child.start_point[0] <= target_line <= child.end_point[0]:
-                _search(child, target_line)
-
-    _search(root, node.start_point[0])
-    return result[0]
-
-
-def _find_child(node: ts.Node, type_name: str) -> ts.Node | None:
-    for child in node.children:
-        if child.type == type_name:
-            return child
-    return None

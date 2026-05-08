@@ -7,6 +7,7 @@ import tree_sitter as ts
 from ethunter.graph.model import CallEdge, CallType
 from ethunter.analyzer.dataflow import VariableState
 from ethunter.analyzer.symbol_table import SymbolTable
+from ethunter.analyzer.helpers import find_enclosing_function, find_child
 
 
 def analyze(
@@ -28,7 +29,7 @@ def analyze(
                 var_name = func_node.text.decode('utf-8')
                 targets = dataflow.resolve(var_name)
                 if targets:
-                    caller = _find_enclosing_function(node, tree.root_node)
+                    caller = find_enclosing_function(node, tree.root_node)
                     for target in targets:
                         edges.append(CallEdge(
                             caller=caller or '<unknown>',
@@ -59,7 +60,7 @@ def _handle_lazy_if(
     def _collect_assignments(n: ts.Node) -> None:
         """Recursively find assignments within the if body."""
         if n.type == 'expression_statement':
-            assign = _find_child(n, 'assignment_expression')
+            assign = find_child(n, 'assignment_expression')
             if assign:
                 lhs = assign.child_by_field_name('left') or assign.children[0]
                 rhs = assign.child_by_field_name('right') or assign.children[1]
@@ -72,25 +73,3 @@ def _handle_lazy_if(
             _collect_assignments(c)
 
     _collect_assignments(body)
-
-
-def _find_enclosing_function(node: ts.Node, root: ts.Node) -> str | None:
-    result = [None]
-    def _search(n: ts.Node, line: int) -> None:
-        if result[0] is not None: return
-        if n.type == 'function_definition':
-            decl = _find_child(n, 'function_declarator')
-            if decl:
-                ident = _find_child(decl, 'identifier')
-                if ident and ident.text:
-                    result[0] = ident.text.decode('utf-8')
-        for c in n.children:
-            if c.start_point[0] <= line <= c.end_point[0]:
-                _search(c, line)
-    _search(root, node.start_point[0])
-    return result[0]
-
-def _find_child(node: ts.Node, type_name: str) -> ts.Node | None:
-    for c in node.children:
-        if c.type == type_name: return c
-    return None
