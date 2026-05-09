@@ -1,11 +1,11 @@
 {
   "examples": [
     {
-      "caller": "cb_caller",
+      "caller": "source",
       "callee": "scpio"
     },
     {
-      "caller": "cb_caller",
+      "caller": "get_msg_extended",
       "callee": "sftpio"
     }
   ]

@@ -116,8 +116,3 @@ sftpio(void *_bwlimit, size_t amount)
 	return 0;
 }
 
-
-/* Wrapper: calls through cb */
-void cb_caller(void *, size_t) {
-    cb(size_t);
-}
