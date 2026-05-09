@@ -6,7 +6,6 @@ gimple_fold_stmt_to_constant_1 (gimple *stmt, tree (*valueize) (tree),
 				tree (*gvalueize) (tree))
 {
   gimple_match_op res_op;
-  ...
 	if (gimple_call_internal_p (stmt))
 	  {
 	    tree arg0 = gimple_call_arg (stmt, 0);
@@ -14,7 +13,7 @@ gimple_fold_stmt_to_constant_1 (gimple *stmt, tree (*valueize) (tree),
 	    tree op0 = (*valueize) (arg0);
 	    tree op1 = (*valueize) (arg1);
       }
-   ...
+   return NULL_TREE;
 }
 
 tree
@@ -27,13 +26,12 @@ gimple_fold_stmt_to_constant (gimple *stmt, tree (*valueize) (tree))
 }
 
 static unsigned int
-object_sizes_execute (function *fun, bool early)
+object_sizes_execute (int fun, int early)
 {
-    basic_block bb;
-    ...
+    int result;
 
-    result = gimple_fold_stmt_to_constant (call, do_valueize);
-    ...
+    result = gimple_fold_stmt_to_constant (NULL, do_valueize);
+    return result;
 }
 
 static tree
@@ -42,10 +40,7 @@ ccp_fold (gimple *stmt)
   switch (gimple_code (stmt))
     {
     case GIMPLE_SWITCH:
-      {
-	/* Return the constant switch index.  */
-        return valueize_op (gimple_switch_index (as_a <gswitch *> (stmt)));
-      }
+      return valueize_op (gimple_switch_index (stmt));
 
     case GIMPLE_COND:
     case GIMPLE_ASSIGN:
@@ -54,12 +49,12 @@ ccp_fold (gimple *stmt)
 					     valueize_op, valueize_op_1);
 
     default:
-      gcc_unreachable ();
+      return NULL_TREE;
     }
 }
 
-static enum ssa_prop_result
-copy_prop_visit_assignment (gimple *stmt, tree *result_p)
+static int
+copy_prop_visit_assignment (gimple *stmt)
 {
   tree lhs = gimple_assign_lhs (stmt);
   tree rhs = gimple_fold_stmt_to_constant_1 (stmt, valueize_val);
@@ -72,34 +67,29 @@ copy_prop_visit_assignment (gimple *stmt, tree *result_p)
     }
   else
     rhs = lhs;
+  return 0;
 }
 
 static void
-back_propagate_equivalences (tree lhs, edge e,
-			     class const_and_copies *const_and_copies,
-			     bitmap domby)
+back_propagate_equivalences (tree lhs, int e,
+				     void *const_and_copies,
+				     int domby)
 {
-  ...
-
-        tree res = gimple_fold_stmt_to_constant_1 (use_stmt, dom_valueize,
+        tree res = gimple_fold_stmt_to_constant_1 (NULL, dom_valueize,
                             no_follow_ssa_edges);
         if (res && (TREE_CODE (res) == SSA_NAME || is_gimple_min_invariant (res)))
-    record_equality (lhs2, res, const_and_copies);
-  ...
+    record_equality (lhs, res, const_and_copies);
 }
 
 static tree
-try_to_simplify (gassign *stmt)
+try_to_simplify (gimple *stmt)
 {
   enum tree_code code = gimple_assign_rhs_code (stmt);
   tree tem;
 
-  /* For stores we can end up simplifying a SSA_NAME rhs.  Just return
-     in this case, there is no point in doing extra work.  */
   if (code == SSA_NAME)
     return NULL_TREE;
 
-  /* First try constant folding based on our current lattice.  */
   mprts_hook = vn_lookup_simplify_result;
   tem = gimple_fold_stmt_to_constant_1 (stmt, vn_valueize, vn_valueize);
   mprts_hook = NULL;
@@ -111,46 +101,38 @@ try_to_simplify (gassign *stmt)
   return NULL_TREE;
 }
 
-static bool
-visit_stmt (gimple *stmt, bool backedges_varying_p = false)
+static int
+visit_stmt (gimple *stmt)
 {
-  bool changed = false;
-  ...
-  	  tree simplified = gimple_fold_stmt_to_constant_1 (call_stmt,
+  int changed = 0;
+ 	  tree simplified = gimple_fold_stmt_to_constant_1 (stmt,
 							    vn_valueize);
 	  if (simplified)
 	    {
-	      if (dump_file && (dump_flags & TDF_DETAILS))
+	      if (dump_file)
 		{
-		  fprintf (dump_file, "call ");
-		  print_gimple_expr (dump_file, call_stmt, 0);
-		  fprintf (dump_file, " simplified to ");
-		  print_generic_expr (dump_file, simplified);
-		  fprintf (dump_file, "\n");
+		  print_generic_expr (simplified);
 		}
 	    }
-  ...
+  return changed;
 }
 
 void
-jt_state::register_equivs_stmt (gimple *stmt, basic_block bb,
-				jt_simplifier *simplifier)
+jt_state_register_equivs_stmt (gimple *stmt, int bb,
+				void *simplifier)
 {
      tree cached_lhs = NULL;
-     ...
   if (gimple_assign_single_p (stmt)
       && TREE_CODE (gimple_assign_rhs1 (stmt)) == SSA_NAME)
     cached_lhs = gimple_assign_rhs1 (stmt);
   else
     {
-        ...
       cached_lhs = gimple_fold_stmt_to_constant_1 (stmt, threadedge_valueize);
     }
-    ...
 }
 
 void
-pointer_equiv_analyzer::visit_stmt (gimple *stmt)
+pointer_equiv_analyzer_visit_stmt (gimple *stmt)
 {
   if (gimple_code (stmt) != GIMPLE_ASSIGN)
     return;
@@ -167,8 +149,6 @@ pointer_equiv_analyzer::visit_stmt (gimple *stmt)
       return;
     }
 
-  // If we couldn't find anything, try fold.
-  x_fold_context = { stmt, m_ranger, this};
   rhs = gimple_fold_stmt_to_constant_1 (stmt, pta_valueize, pta_valueize);
   if (rhs)
     {
@@ -181,43 +161,23 @@ pointer_equiv_analyzer::visit_stmt (gimple *stmt)
     }
 }
 
-
-/* Wrapper: calls through valueize */
-void valueize_caller(tree) {
-    valueize(tree);
-}
-
-
-
 /* Stub implementation for pta_valueize */
 void pta_valueize(void) {}
-
-
 
 /* Stub implementation for threadedge_valueize */
 void threadedge_valueize(void) {}
 
-
-
 /* Stub implementation for vn_valueize */
 void vn_valueize(void) {}
-
-
 
 /* Stub implementation for dom_valueize */
 void dom_valueize(void) {}
 
-
-
 /* Stub implementation for valueize_val */
 void valueize_val(void) {}
 
-
-
 /* Stub implementation for valueize_op */
-void valueize_op(gimple_switch_index (as_a <gswitch *> (stmt))) {}
-
-
+void valueize_op(void) {}
 
 /* Stub implementation for do_valueize */
 void do_valueize(void) {}
