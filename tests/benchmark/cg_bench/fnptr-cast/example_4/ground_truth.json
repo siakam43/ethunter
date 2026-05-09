@@ -1,7 +1,7 @@
 {
   "examples": [
     {
-      "caller": "md5_update_func_caller",
+      "caller": "Curl_MD5_update",
       "callee": "my_md5_update"
     }
   ]

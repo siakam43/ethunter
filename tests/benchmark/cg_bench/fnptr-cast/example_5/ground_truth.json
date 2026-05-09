@@ -1,7 +1,7 @@
 {
   "examples": [
     {
-      "caller": "memory_caller",
+      "caller": "__gmp_doprnt_integer",
       "callee": "__gmp_asprintf_memory"
     }
   ]

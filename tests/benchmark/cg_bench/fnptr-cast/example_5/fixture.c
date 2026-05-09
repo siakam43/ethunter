@@ -6,7 +6,12 @@ int __gmp_doprnt_integer (const struct doprnt_funs_t *funs,
 		      const struct doprnt_params_t *p,
 		      const char *s)
 {
-  ...
+  int slen = 0;
+  int slashlen = 0;
+  int retval = 0;
+  const char *slash = NULL;
+  const char *showbase = NULL;
+  int den_showbaselen = 0;
   if (den_showbaselen != 0)
   {
     ASSERT (slash != NULL);
@@ -16,7 +21,7 @@ int __gmp_doprnt_integer (const struct doprnt_funs_t *funs,
     s += slashlen;
     DOPRNT_MEMORY (showbase, den_showbaselen);
   }
-  ...
+  return retval;
 }
 
 #define DOPRNT_ACCUMULATE(call)						\
@@ -36,16 +41,15 @@ int __gmp_doprnt_integer (const struct doprnt_funs_t *funs,
 #define DOPRNT_MEMORY(ptr, len)						\
   DOPRNT_ACCUMULATE_FUN (funs->memory, (data, ptr, len))
 
-ostream& __gmp_doprnt_integer_ostream (ostream &o, struct doprnt_params_t *p,
+int __gmp_doprnt_integer_ostream (void *o, struct doprnt_params_t *p,
                               char *s)
 {
   struct gmp_asprintf_t   d;
-  ...
+  int ret;
 
   GMP_ASPRINTF_T_INIT (d, &result);
   ret = __gmp_doprnt_integer (&__gmp_asprintf_funs_noformat, &d, p, s);
-  ...
-  return o.write (t.str, t.len);
+  return ret;
 }
 
 typedef int (*doprnt_format_t) (void *, const char *, va_list);
@@ -74,10 +78,4 @@ __gmp_asprintf_memory (struct gmp_asprintf_t *d, const char *str, size_t len)
   memcpy (d->buf + d->size, str, len);
   d->size += len;
   return len;
-}
-
-
-/* Wrapper: calls through funs->memory */
-void memory_caller(void) {
-    funs->memory();
 }

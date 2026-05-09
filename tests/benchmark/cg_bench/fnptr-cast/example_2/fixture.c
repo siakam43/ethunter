@@ -109,8 +109,8 @@ fmd_serd_hash_create(fmd_serd_hash_t *shp)
 
 }
 
-_LIBZFS_H libzfs_handle_t *libzfs_init(void) {
-	...
+libzfs_handle_t *libzfs_init(void) {
+	void *hdl = NULL;
 	return (hdl);
 }
 
@@ -149,5 +149,4 @@ zfs_fm_timeout(fmd_hdl_t *hdl, id_t id, void *data)
 static void
 zfs_fm_recv(fmd_hdl_t *hdl, fmd_event_t *ep, nvlist_t *nvl, const char *class)
 {
-	...
 }

@@ -23,7 +23,7 @@ abd_fletcher_4_iter(void *data, size_t size, void *private)
 	}
 
 	if (size > 0) {
-		ASSERT3U(size, <, FLETCHER_MIN_SIMD_SIZE);
+		/* ASSERT size < FLETCHER_MIN_SIMD_SIZE */
 		/* At this point we have to switch to scalar impl */
 		abd_fletcher_4_simd2scalar(native, data, size, cdp);
 	}
@@ -86,19 +86,19 @@ fletcher_4_impl_get(void)
 	case IMPL_CYCLE:
 		/* Cycle through supported implementations */
 		ASSERT(fletcher_4_initialized);
-		ASSERT3U(fletcher_4_supp_impls_cnt, >, 0);
+		/* ASSERT fletcher_4_supp_impls_cnt > 0 */
 		static uint32_t cycle_count = 0;
 		uint32_t idx = (++cycle_count) % fletcher_4_supp_impls_cnt;
 		ops = fletcher_4_supp_impls[idx];
 		break;
 	default:
-		ASSERT3U(fletcher_4_supp_impls_cnt, >, 0);
-		ASSERT3U(impl, <, fletcher_4_supp_impls_cnt);
+		/* ASSERT fletcher_4_supp_impls_cnt > 0 */
+		/* ASSERT impl < fletcher_4_supp_impls_cnt */
 		ops = fletcher_4_supp_impls[impl];
 		break;
 	}
 
-	ASSERT3P(ops, !=, NULL);
+	/* ASSERT ops != NULL */
 
 	return (ops);
 }
@@ -123,25 +123,7 @@ static fletcher_4_ops_t fletcher_4_fastest_impl = {
 static const fletcher_4_ops_t *fletcher_4_impls[] = {
 	&fletcher_4_scalar_ops,
 	&fletcher_4_superscalar_ops,
-	&fletcher_4_superscalar4_ops,
-#if defined(HAVE_SSE2)
-	&fletcher_4_sse2_ops,
-#endif
-#if defined(HAVE_SSE2) && defined(HAVE_SSSE3)
-	&fletcher_4_ssse3_ops,
-#endif
-#if defined(HAVE_AVX) && defined(HAVE_AVX2)
-	&fletcher_4_avx2_ops,
-#endif
-#if defined(__x86_64) && defined(HAVE_AVX512F)
-	&fletcher_4_avx512f_ops,
-#endif
-#if defined(__x86_64) && defined(HAVE_AVX512BW)
-	&fletcher_4_avx512bw_ops,
-#endif
-#if defined(__aarch64__) && !defined(__FreeBSD__)
-	&fletcher_4_aarch64_neon_ops,
-#endif
+	&fletcher_4_superscalar4_ops
 };
 
 const fletcher_4_ops_t fletcher_4_superscalar_ops = {

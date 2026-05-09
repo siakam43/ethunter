@@ -5,7 +5,8 @@ struct MD5_context *Curl_MD5_init(const struct MD5_params *md5params)
 {
   struct MD5_context *ctxt;
 
-  ...
+  ctxt = malloc(sizeof(*ctxt));
+  if (!ctxt) return NULL;
 
   if((*md5params->md5_init_func)(ctxt->md5_hashctx)) {
     free(ctxt->md5_hashctx);
@@ -16,19 +17,20 @@ struct MD5_context *Curl_MD5_init(const struct MD5_params *md5params)
   return ctxt;
 }
 
-/* Decode the challenge message */
-CURLcode result = auth_decode_digest_md5_message(chlg,
-                                                 nonce, sizeof(nonce),
-                                                 realm, sizeof(realm),
-                                                 algorithm,
-                                                 sizeof(algorithm),
-                                                 qop_options,
-                                                 sizeof(qop_options)) {
-if(result)
+CURLcode auth_decode_digest_md5_message(const char *chlg,
+                                         char *nonce, int nonce_len,
+                                         char *realm, int realm_len,
+                                         char *algorithm, int algorithm_len,
+                                         char *qop_options, int qop_options_len)
+{
+  CURLcode result = CURLE_OK;
+  struct MD5_context *ctxt;
+
+  if(result)
+    return result;
+
+  ctxt = Curl_MD5_init(Curl_DIGEST_MD5);
   return result;
-...
-ctxt = Curl_MD5_init(Curl_DIGEST_MD5);
-...
 }
 
 #define CURLX_FUNCTION_CAST(target_type, func) \
@@ -48,14 +50,6 @@ const struct MD5_params Curl_DIGEST_MD5[] = {
     16
   }
 };
-
-
-/* Wrapper: calls through *md5params->md5_init_func */
-void md5_init_func_caller(void) {
-    *md5params->md5_init_func();
-}
-
-
 
 /* Stub implementation for my_md5_init */
 void my_md5_init(void) {}

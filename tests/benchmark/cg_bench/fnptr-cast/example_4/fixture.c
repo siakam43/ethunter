@@ -14,14 +14,14 @@ static CURLcode pop3_perform_apop(struct Curl_easy *data,
                                   struct connectdata *conn)
 {
   CURLcode result = CURLE_OK;
-  ...
+  struct MD5_context *ctxt;
   /* Create the digest */
   ctxt = Curl_MD5_init(Curl_DIGEST_MD5);
   if(!ctxt)
      return CURLE_OUT_OF_MEMORY;
   Curl_MD5_update(ctxt, (const unsigned char *) pop3c->apoptimestamp,
                   curlx_uztoui(strlen(pop3c->apoptimestamp)));
-  ...
+  return result;
 }
 
 struct MD5_context *Curl_MD5_init(const struct MD5_params *md5params)
@@ -30,11 +30,12 @@ struct MD5_context *Curl_MD5_init(const struct MD5_params *md5params)
 
   /* Create MD5 context */
   ctxt = malloc(sizeof(*ctxt));
-  ...
   ctxt->md5_hash = md5params;
-  ...
   return ctxt;
 }
+
+#define CURLX_FUNCTION_CAST(target_type, func) \
+  (target_type)(void (*) (void))(func)
 
 const struct MD5_params Curl_DIGEST_MD5[] = {
   {
@@ -50,14 +51,6 @@ const struct MD5_params Curl_DIGEST_MD5[] = {
     16
   }
 };
-
-
-/* Wrapper: calls through *context->md5_hash->md5_update_func */
-void md5_update_func_caller(void) {
-    *context->md5_hash->md5_update_func();
-}
-
-
 
 /* Stub implementation for my_md5_update */
 void my_md5_update(void) {}

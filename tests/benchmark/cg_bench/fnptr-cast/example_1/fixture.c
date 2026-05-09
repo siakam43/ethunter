@@ -10,16 +10,8 @@ hpa_hooks_curtime(nstime_t *r_nstime, bool first_reading) {
 }
 
 typedef void (nstime_update_t)(nstime_t *);
-extern nstime_update_t *JET_MUTABLE nstime_update;
-nstime_update_t *JET_MUTABLE nstime_update = nstime_update_impl;
-
-/* Various function pointers are static and immutable except during testing. */
-#ifdef JEMALLOC_JET
-#  define JET_MUTABLE
-#else
-#  define JET_MUTABLE const
-#endif
-
+extern nstime_update_t *const nstime_update;
+nstime_update_t *const nstime_update = nstime_update_impl;
 
 /* Stub implementation for nstime_update_impl */
 void nstime_update_impl(void) {}
