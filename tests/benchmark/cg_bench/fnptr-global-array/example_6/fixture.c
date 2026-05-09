@@ -96,11 +96,6 @@ gf_x1_mul_fns[256] = {
 }
 
 
-/* Wrapper: calls through gf_x1_mul_fns[c] */
-void gf_x1_mul_fns[c]_caller(void) {
-    gf_x1_mul_fns[c]();
-}
-
 
 
 /* Stub implementation for mul_x1_0 */

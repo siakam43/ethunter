@@ -8,7 +8,7 @@ int ccm_mode_encrypt_contiguous_blocks(ccm_ctx_t *ctx, char *data, size_t length
     void (*xor_block)(uint8_t *, uint8_t *))
 {
     size_t remainder = length;
-	...
+	size_t consumed = 0;
 
 	if (length + ctx->ccm_remainder_len < block_size) {
 		/* accumulate bytes here and return */
@@ -25,9 +25,6 @@ int ccm_mode_encrypt_contiguous_blocks(ccm_ctx_t *ctx, char *data, size_t length
 	mac_buf = (uint8_t *)ctx->ccm_mac_buf;
 
 	do {
-		/* Unprocessed data from last call. */
-		...
-
 		xor_block(blockp, mac_buf);
 		encrypt_block(ctx->ccm_keysched, mac_buf, mac_buf);
 
@@ -35,7 +32,7 @@ int ccm_mode_encrypt_contiguous_blocks(ccm_ctx_t *ctx, char *data, size_t length
 		encrypt_block(ctx->ccm_keysched, (uint8_t *)ctx->ccm_cb,
 		    (uint8_t *)ctx->ccm_tmp);
 
-		...
+		consumed += block_size;
 		ctx->ccm_copy_to = NULL;
 
 	} while (remainder > 0);
@@ -58,16 +55,8 @@ int aes_encrypt_contiguous_blocks(void *ctx, char *data, size_t length,
 		    out, AES_BLOCK_LEN, aes_encrypt_block, aes_copy_block,
 		    aes_xor_block);
     }
-    ...
+    return rv;
 }
-
-
-/* Wrapper: calls through encrypt_block */
-void encrypt_block_caller(void) {
-    encrypt_block();
-}
-
-
 
 /* Stub implementation for aes_encrypt_block */
 void aes_encrypt_block(void) {}

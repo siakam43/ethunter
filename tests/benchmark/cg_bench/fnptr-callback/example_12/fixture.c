@@ -13,12 +13,11 @@ static CURLcode auth_create_digest_http_message(
                   CURLcode (*hash)(unsigned char *, const unsigned char *,
                                    const size_t))
 {
-  ...
   if(!hashthis)
     return CURLE_OUT_OF_MEMORY;
 
   hash(hashbuf, (unsigned char *) hashthis, strlen(hashthis));
-  ...
+  free(hashthis);
 }
 
 CURLcode Curl_auth_create_digest_http_message(struct Curl_easy *data,
@@ -42,14 +41,6 @@ CURLcode Curl_auth_create_digest_http_message(struct Curl_easy *data,
                                          auth_digest_sha256_to_ascii,
                                          Curl_sha256it);
 }
-
-
-/* Wrapper: calls through hash */
-void hash_caller(unsigned char *, const unsigned char *,
-                                   const size_t) {
-    hash(size_t);
-}
-
 
 
 /* Stub implementation for Curl_md5it */

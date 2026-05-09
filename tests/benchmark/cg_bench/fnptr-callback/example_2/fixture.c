@@ -46,19 +46,10 @@ int main(int argc, char **argv) {
         usage();
         exit(1);
     }
-    ...
     print_stats_header();
     print_stats("Latency", statistics.latency, format_time_us);
     print_stats("Req/Sec", statistics.requests, format_metric);
-    ...
 }
-
-
-/* Wrapper: calls through fmt */
-void fmt_caller(long double) {
-    fmt(double);
-}
-
 
 
 /* Stub implementation for format_time_us */

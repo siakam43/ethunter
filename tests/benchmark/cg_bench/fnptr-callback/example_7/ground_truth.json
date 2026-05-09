@@ -1,15 +1,15 @@
 {
   "examples": [
     {
-      "caller": "defragRadixTree",
+      "caller": "defragStreamConsumer",
       "callee": "defragStreamConsumerPendingEntry"
     },
     {
-      "caller": "defragRadixTree",
+      "caller": "defragStreamConsumerGroup",
       "callee": "defragStreamConsumer"
     },
     {
-      "caller": "defragRadixTree",
+      "caller": "defragStream",
       "callee": "defragStreamConsumerGroup"
     }
   ]

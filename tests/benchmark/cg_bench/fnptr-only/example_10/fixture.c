@@ -1,5 +1,5 @@
 /* CG-Bench fixture: fnptr-only/example_10 */
-/* fnptr: Curl_cfree, targets: malloc */
+/* fnptr: Curl_cmalloc, targets: malloc */
 
 CURLcode Curl_smtp_escape_eob(struct Curl_easy *data,
                               const ssize_t nread,
@@ -11,7 +11,7 @@ CURLcode Curl_smtp_escape_eob(struct Curl_easy *data,
   if(!scratch || data->set.crlf) {
     oldscratch = scratch;
 
-    scratch = newscratch = malloc(2 * data->set.upload_buffer_size);
+    scratch = newscratch = Curl_cmalloc(2 * data->set.upload_buffer_size);
     if(!newscratch) {
       failf(data, "Failed to alloc scratch buffer");
 
@@ -22,13 +22,9 @@ CURLcode Curl_smtp_escape_eob(struct Curl_easy *data,
   ...
 }
 
-#define malloc(size) Curl_cmalloc(size)
+#define Curl_cmalloc(size) malloc(size)
 
 
-/* Wrapper: calls through Curl_cfree */
-void Curl_cfree_caller(void) {
-    Curl_cfree();
-}
 
 
 

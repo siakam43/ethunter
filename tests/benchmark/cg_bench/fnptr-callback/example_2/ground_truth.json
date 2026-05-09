@@ -1,11 +1,11 @@
 {
   "examples": [
     {
-      "caller": "fmt_caller",
+      "caller": "print_units",
       "callee": "format_time_us"
     },
     {
-      "caller": "fmt_caller",
+      "caller": "print_units",
       "callee": "format_metric"
     }
   ]

@@ -4,7 +4,7 @@
 void defragRadixTree(rax **raxref, int defrag_data, raxDefragFunction *element_cb, void *element_cb_data) {
     raxIterator ri;
     rax* rax;
-    ...
+
     while (raxNext(&ri)) {
         void *newdata = NULL;
         if (element_cb)

@@ -1,20 +1,20 @@
 /* CG-Bench fixture: fnptr-only/example_2 */
 /* fnptr: Curl_ccalloc, targets: calloc */
 
-static const char *dsthost,
+static const char *dsthost Curl_new(
                                       enum alpnid srcalpnid,
                                       enum alpnid dstalpnid,
                                       unsigned int srcport,
                                       unsigned int dstport)
 {
-  struct altsvc *as = calloc(1, sizeof(struct altsvc));
+  struct altsvc *as = zcalloc(1, sizeof(struct altsvc));
   size_t hlen;
   size_t dlen;
   if(!as)
     return NULL;
 }
 
-#define calloc(nbelem,size) Curl_ccalloc(nbelem, size)
+#define zcalloc(nbelem,size) Curl_ccalloc(nbelem, size)
 
 curl_calloc_callback Curl_ccalloc = (curl_calloc_callback)calloc;
 
@@ -35,10 +35,6 @@ static CURLcode global_init(long flags, bool memoryfuncs)
 }
 
 
-/* Wrapper: calls through Curl_ccalloc */
-void Curl_ccalloc_caller(void) {
-    Curl_ccalloc();
-}
 
 
 

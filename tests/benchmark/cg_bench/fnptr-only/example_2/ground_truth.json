@@ -1,7 +1,7 @@
 {
   "examples": [
     {
-      "caller": "Curl_ccalloc_caller",
+      "caller": "Curl_new",
       "callee": "calloc"
     }
   ]

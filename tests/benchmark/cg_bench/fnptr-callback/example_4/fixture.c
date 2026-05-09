@@ -32,14 +32,6 @@ const AVCodec *avcodec_find_decoder(enum AVCodecID id)
     return find_codec(id, av_codec_is_decoder);
 }
 
-
-/* Wrapper: calls through x */
-void x_caller(void) {
-    x();
-}
-
-
-
 /* Stub implementation for av_codec_is_decoder */
 void av_codec_is_decoder(void) {}
 

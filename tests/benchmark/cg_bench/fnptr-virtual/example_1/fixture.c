@@ -283,10 +283,6 @@ protected:
 };
 
 
-/* Stub implementation for noop_region_model_context::get_state_map_by_name */
-void noop_region_model_context::get_state_map_by_name(void) {}
 
 
 
-/* Stub implementation for region_model_context_decorator::get_state_map_by_name */
-void region_model_context_decorator::get_state_map_by_name(void) {}

@@ -24,17 +24,12 @@ CURLcode Curl_output_digest(struct Curl_easy *data,
 }
 
 #define Curl_safefree(ptr) \
-  do { free((ptr)); (ptr) = NULL;} while(0)
+  do { Curl_cfree((ptr)); (ptr) = NULL;} while(0)
 
-#define free(ptr) Curl_cfree(ptr)
 
 curl_free_callback Curl_cfree = (curl_free_callback)free;
 
 
-/* Wrapper: calls through Curl_cfree */
-void Curl_cfree_caller(void) {
-    Curl_cfree();
-}
 
 
 

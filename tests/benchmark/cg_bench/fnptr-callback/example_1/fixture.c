@@ -17,7 +17,7 @@ static CURLcode auth_create_digest_http_message(
     hashthis = aprintf("%s:%s", userp, digest->realm ? digest->realm : "");
     if(!hashthis)
         return CURLE_OUT_OF_MEMORY;
-    
+
     hash(hashbuf, (unsigned char *) hashthis, strlen(hashthis));
     free(hashthis);
     convert_to_ascii(hashbuf, (unsigned char *)userh);
@@ -44,12 +44,6 @@ CURLcode Curl_auth_create_digest_http_message(struct Curl_easy *data,
                                          outptr, outlen,
                                          auth_digest_sha256_to_ascii,
                                          Curl_sha256it);
-}
-
-
-/* Wrapper: calls through convert_to_ascii */
-void convert_to_ascii_caller(void) {
-    convert_to_ascii();
 }
 
 

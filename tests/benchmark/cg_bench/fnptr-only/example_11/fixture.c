@@ -1,5 +1,5 @@
 /* CG-Bench fixture: fnptr-only/example_11 */
-/* fnptr: strdup, targets: Curl_strdup, strdup */
+/* fnptr: Curl_cstrdup, targets: Curl_strdup, strdup */
 
 struct Cookie *
 Curl_cookie_add(struct Curl_easy *data,
@@ -19,13 +19,13 @@ Curl_cookie_add(struct Curl_easy *data,
         switch(fields) {
         ...
         case 5:
-        co->name = strdup(ptr);
+        co->name = Curl_cstrdup(ptr);
         ...
         }
     }
 }
 
-#define strdup(ptr) Curl_cstrdup(ptr)
+#define Curl_cstrdup(ptr) strdup(ptr)
 
 curl_strdup_callback Curl_cstrdup = (curl_strdup_callback)system_strdup;
 
@@ -38,10 +38,6 @@ curl_strdup_callback Curl_cstrdup = (curl_strdup_callback)system_strdup;
 #endif
 
 
-/* Wrapper: calls through strdup */
-void strdup_caller(void) {
-    strdup();
-}
 
 
 

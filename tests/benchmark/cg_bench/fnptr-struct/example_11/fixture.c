@@ -99,8 +99,3 @@ int ssl3_put_cipher_by_char(const SSL_CIPHER *c, WPACKET *pkt, size_t *len)
 }
 
 
-/* Wrapper: calls through s->method->put_cipher_by_char */
-void put_cipher_by_char_caller(const SSL_CIPHER *cipher, WPACKET *pkt,
-                               size_t *len) {
-    s->method->put_cipher_by_char(cipher, pkt, len);
-}

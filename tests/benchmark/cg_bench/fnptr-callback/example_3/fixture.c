@@ -1,17 +1,20 @@
 /* CG-Bench fixture: fnptr-callback/example_3 */
 /* fnptr: cbk, targets: nfs_is_shared_cb, nfs_copy_entries_cb */
 
-static nfs_process_exports(const char *exports, const char *mountpoint,
+static int nfs_process_exports(const char *exports, const char *mountpoint,
     boolean_t (*cbk)(void *userdata, char *line, boolean_t found_mountpoint),
     void *userdata)
 {
 	int error = SA_OK;
 	boolean_t cont = B_TRUE;
+	char *buf = NULL;
+	size_t buflen = 0;
+	const char *mp = mountpoint;
+	size_t mplen = mp ? strlen(mp) : 0;
+	char *sep;
 
 	FILE *oldfp = fopen(exports, "re");
 	if (oldfp != NULL) {
-		...
-
 		while (cont && getline(&buf, &buflen, oldfp) != -1) {
 			if (buf[0] == '\n' || buf[0] == '#')
 				continue;
@@ -20,14 +23,16 @@ static nfs_process_exports(const char *exports, const char *mountpoint,
 			    (sep = strpbrk(buf, "\t \n")) != NULL &&
 			    sep - buf == mplen &&
 			    strncmp(buf, mp, mplen) == 0);
-		... 
-	    }
+		}
 
-	    return (error);
-    }
+		fclose(oldfp);
+		free(buf);
+	}
+
+	return (error);
 }
 
-static nfs_copy_entries(FILE *newfp, const char *exports, const char *mountpoint)
+static int nfs_copy_entries(FILE *newfp, const char *exports, const char *mountpoint)
 {
 	fputs(FILE_HEADER, newfp);
 
@@ -47,13 +52,6 @@ boolean_t nfs_is_shared_impl(const char *exports, sa_share_impl_t impl_share)
 	    nfs_is_shared_cb, &found);
 	return (found);
 }
-
-
-/* Wrapper: calls through cbk */
-void cbk_caller(void *userdata, char *line, boolean_t found_mountpoint) {
-    cbk(userdata, line, found_mountpoint);
-}
-
 
 
 /* Stub implementation for nfs_is_shared_cb */

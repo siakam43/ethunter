@@ -10,8 +10,6 @@ int quicklistPopCustom(quicklist *quicklist, int where, unsigned char **data,
     long long vlong;
     int pos = (where == QUICKLIST_HEAD) ? 0 : -1;
 
-    ...
-
     if (unlikely(QL_NODE_IS_PLAIN(node))) {
         if (data)
             *data = saver(node->entry, node->sz);
@@ -20,7 +18,7 @@ int quicklistPopCustom(quicklist *quicklist, int where, unsigned char **data,
         quicklistDelIndex(quicklist, node, NULL);
         return 1;
     }
-    ...
+    return 0;
 }
 
 robj *listTypePop(robj *subject, int where) {
@@ -34,8 +32,8 @@ robj *listTypePop(robj *subject, int where) {
             if (!value)
                 value = createStringObjectFromLongLong(vlong);
         }
-        ...
     }
+    return value;
 }
 
 int quicklistPop(quicklist *quicklist, int where, unsigned char **data,
@@ -47,21 +45,11 @@ int quicklistPop(quicklist *quicklist, int where, unsigned char **data,
         return 0;
     int ret = quicklistPopCustom(quicklist, where, &vstr, &vlen, &vlong,
                                  _quicklistSaver);
-    ...
+    return ret;
 }
-
-
-/* Wrapper: calls through saver */
-void saver_caller(unsigned char *data, size_t sz) {
-    saver(data, sz);
-}
-
-
 
 /* Stub implementation for _quicklistSaver */
 void _quicklistSaver(void) {}
-
-
 
 /* Stub implementation for listPopSaver */
 void listPopSaver(void) {}

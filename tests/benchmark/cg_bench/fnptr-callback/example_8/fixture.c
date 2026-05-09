@@ -8,7 +8,7 @@ med3(char *a, char *b, char *c,
 
 	return cmp(a, b) < 0 ?
 	       (cmp(b, c) < 0 ? b : (cmp(a, c) < 0 ? c : a ))
-              :(cmp(b, c) > 0 ? b : (cmp(a, c) < 0 ? a : c ));
+	      :(cmp(b, c) > 0 ? b : (cmp(a, c) < 0 ? a : c ));
 }
 
 static void _pqsort(void *a, size_t n, size_t es,
@@ -50,7 +50,6 @@ pqsort(void *a, size_t n, size_t es,
 
 void georadiusGeneric(client *c, int srcKeyIndex, int flags) {
     robj *storekey = NULL;
-    ...
 
     /* Process [optional] requested sorting */
     if (sort != SORT_NONE) {
@@ -71,25 +70,15 @@ void georadiusGeneric(client *c, int srcKeyIndex, int flags) {
 }
 
 void sortCommandGeneric(client *c, int readonly) {
-    ...
 
     /* Now it's time to load the right scores in the sorting vector */
     if (!dontsort) {
-        ...
         if (sortby && (start != 0 || end != vectorlen-1))
             pqsort(vector,vectorlen,sizeof(redisSortObject),sortCompare, start,end);
         else
             qsort(vector,vectorlen,sizeof(redisSortObject),sortCompare);
     }
 }
-
-
-/* Wrapper: calls through cmp */
-void cmp_caller(void) {
-    cmp();
-}
-
-
 
 /* Stub implementation for sort_gp_asc */
 void sort_gp_asc(void) {}

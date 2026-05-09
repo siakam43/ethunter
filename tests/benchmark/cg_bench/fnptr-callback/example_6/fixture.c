@@ -6,8 +6,6 @@ emap_edata_lookup_batch(tsd_t *tsd, emap_t *emap, size_t nptrs,
     emap_ptr_getter ptr_getter, void *ptr_getter_ctx,
     emap_metadata_visitor metadata_visitor, void *metadata_visitor_ctx,
     emap_batch_lookup_result_t *result) {
-	...
-
 	for (size_t i = 0; i < nptrs; i++) {
 		const void *ptr = ptr_getter(ptr_getter_ctx, i);
 
@@ -15,8 +13,7 @@ emap_edata_lookup_batch(tsd_t *tsd, emap_t *emap, size_t nptrs,
 		    &emap->rtree, rtree_ctx, (uintptr_t)ptr,
 		    /* dependent */ true, /* init_missing */ false);
 	}
-
-	...
+	return;
 }
 
 static void

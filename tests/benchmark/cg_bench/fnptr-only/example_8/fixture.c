@@ -16,19 +16,15 @@ Curl_cookie_add(struct Curl_easy *data,
     ...
     if(lineptr[0]=='#') {
       /* don't even try the comments */
-      free(co);
+      Curl_cfree(co);
       return NULL;
     }
     ...
 }
 
-#define free(ptr) Curl_cfree(ptr)
+#define Curl_cfree(ptr) free(ptr)
 
 
-/* Wrapper: calls through Curl_cfree */
-void Curl_cfree_caller(void) {
-    Curl_cfree();
-}
 
 
 

@@ -1,7 +1,7 @@
 {
   "examples": [
     {
-      "caller": "encrypt_block_caller",
+      "caller": "aes_encrypt_contiguous_blocks",
       "callee": "aes_encrypt_block"
     }
   ]

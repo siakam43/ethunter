@@ -1,7 +1,7 @@
 {
   "examples": [
     {
-      "caller": "Curl_cfree_caller",
+      "caller": "Curl_smtp_escape_eob",
       "callee": "malloc"
     }
   ]

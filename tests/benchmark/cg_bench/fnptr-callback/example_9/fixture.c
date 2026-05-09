@@ -52,7 +52,7 @@ void addReplyCommandInfo(client *c, struct redisCommand *cmd) {
 void addReplyCommandDocs(client *c, struct redisCommand *cmd) {
     /* Count our reply len so we don't have to use deferred reply. */
     long maplen = 1;
-    ...
+    int needargs = 1;
     if (cmd->args) {
         addReplyBulkCString(c, "arguments");
         addReplyCommandArgList(c, cmd->args, cmd->num_args);
@@ -61,10 +61,4 @@ void addReplyCommandDocs(client *c, struct redisCommand *cmd) {
         addReplyBulkCString(c, "subcommands");
         addReplyCommandSubCommands(c, cmd, addReplyCommandDocs, 1);
     }
-}
-
-
-/* Wrapper: calls through reply_function */
-void reply_function_caller(client*, struct redisCommand*) {
-    reply_function(client, redisCommand);
 }

@@ -1,15 +1,15 @@
 {
   "examples": [
     {
-      "caller": "cmp_caller",
+      "caller": "georadiusGeneric",
       "callee": "sort_gp_asc"
     },
     {
-      "caller": "cmp_caller",
+      "caller": "georadiusGeneric",
       "callee": "sort_gp_desc"
     },
     {
-      "caller": "cmp_caller",
+      "caller": "sortCommandGeneric",
       "callee": "sortCompare"
     }
   ]

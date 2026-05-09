@@ -1,7 +1,7 @@
 {
   "examples": [
     {
-      "caller": "put_cipher_by_char_caller",
+      "caller": "ssl_cipher_list_to_bytes",
       "callee": "ssl3_put_cipher_by_char"
     }
   ]

@@ -1,11 +1,11 @@
 {
   "examples": [
     {
-      "caller": "strdup_caller",
+      "caller": "Curl_cookie_add",
       "callee": "Curl_strdup"
     },
     {
-      "caller": "strdup_caller",
+      "caller": "Curl_cookie_add",
       "callee": "strdup"
     }
   ]

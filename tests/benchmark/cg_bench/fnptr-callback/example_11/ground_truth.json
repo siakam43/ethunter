@@ -1,7 +1,15 @@
 {
   "examples": [
     {
-      "caller": "xor_block_caller",
+      "caller": "aes_encrypt_atomic",
+      "callee": "aes_xor_block"
+    },
+    {
+      "caller": "aes_encrypt_final",
+      "callee": "aes_xor_block"
+    },
+    {
+      "caller": "aes_encrypt",
       "callee": "aes_xor_block"
     }
   ]

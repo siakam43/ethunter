@@ -1,7 +1,7 @@
 {
   "examples": [
     {
-      "caller": "emap_edata_lookup_batch",
+      "caller": "tcache_bin_flush_edatas_lookup",
       "callee": "tcache_bin_flush_ptr_getter"
     }
   ]

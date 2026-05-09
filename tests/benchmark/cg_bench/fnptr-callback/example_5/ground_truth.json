@@ -1,11 +1,11 @@
 {
   "examples": [
     {
-      "caller": "saver_caller",
+      "caller": "quicklistPop",
       "callee": "_quicklistSaver"
     },
     {
-      "caller": "saver_caller",
+      "caller": "listTypePop",
       "callee": "listPopSaver"
     }
   ]
