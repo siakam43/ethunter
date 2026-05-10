@@ -57,7 +57,7 @@ The `--format` parameter has been removed.
 
 ### 5-Phase Pipeline (`src/ethunter/cli.py`)
 
-1. **Scan** — recursively discover `.c`/`.h` files, excluding build directories
+1. **Scan** — recursively discover `.c`/`.h` files, excluding build directories and patterns in `.ethunterignore`
 2. **Parse** — build tree-sitter ASTs for each file
 3. **Symbol Table** — extract function definitions/declarations into a `SymbolTable`, initialize `VariableState` for dataflow tracking
 4. **Analyze** — run 12 analyzer modules + direct call analysis, merge into a single `CallGraph`
@@ -66,9 +66,9 @@ The `--format` parameter has been removed.
 ### Data Model (`src/ethunter/graph/model.py`)
 
 - **`CallType`** — `DIRECT` or `INDIRECT`
-- **`Function`** — name, file, line, signature, return_type, parameters
-- **`CallEdge`** — caller, callee, files, type, `indirect_kind`, caller_line
-- **`CallGraph`** — dict of `Function` by key, list of `CallEdge`, source_files
+- **`Function`** — name, file, line, signature, is_definition, return_type, parameters. Has `key` property: `"{file}:{name}:{line}"`
+- **`CallEdge`** — caller, callee, caller_file, callee_file, type, `indirect_kind`, caller_line
+- **`CallGraph`** — dict of `Function` by key, list of `CallEdge`, source_files. Provides `add_function()`, `add_edge()`, `query_callers()`, `query_callees()`
 
 ### Analyzer Modules
 
@@ -107,7 +107,12 @@ Runs `direct_call` first (uses symbol_names set), then all standard analyzers (u
 
 ```
 src/ethunter/
-  analyzer/       — 13 analysis modules + orchestrator + base.py
+  analyzer/       — 13 analysis modules + orchestrator + helpers.py
+    helpers.py    — shared AST utilities (find_enclosing_function, extract_identifier)
+    dataflow.py   — VariableState for variable → function target tracking
+    symbol_table.py — SymbolTable + extract_functions from tree-sitter AST
+    orchestrator.py — run_all_analyses, deduplication
+    __init__.py   — re-exports all analyzer modules
   graph/          — CallGraph, CallEdge, Function, CallType
   output/         — JSON and DOT serialization
   parser/         — file scanning, tree-sitter parsing, #include tracking
@@ -116,8 +121,12 @@ src/ethunter/
 tests/
   fixtures/       — minimal C files (simple + _complex variants)
   fixtures/cross_file/ — multi-file C fixtures per analyzer
-  benchmark/      — real C projects (cJSON, libuv) with ground_truth.json
+  benchmark/      — real C projects with ground_truth.json
+    cg_bench/     — CG-Bench benchmark suite
   test_analyzers.py     — per-module unit tests
   test_cross_file.py    — cross-file call detection tests
   test_benchmark.py     — benchmark accuracy tests
+  test_cg_bench.py      — CG-Bench integration tests
+  test_query_json.py    — query and JSON round-trip tests
+  test_scanner.py       — file scanner tests
 ```
