@@ -264,3 +264,16 @@ static int config_output(AVFilterLink *outlink)
     (void)prepare_out;
     return ret;
 }
+
+/* Process a slice of pixels through the projection transform */
+static void v360_slice(V360Context *s, int out_w, int out_h)
+{
+    vec3 vec;
+    int i, j;
+
+    for (j = 0; j < out_h; j++) {
+        for (i = 0; i < out_w; i++) {
+            s->out_transform(s, i, j, out_w, out_h, vec);
+        }
+    }
+}

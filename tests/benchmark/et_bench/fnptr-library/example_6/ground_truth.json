@@ -2,7 +2,11 @@
   "examples": [
     {
       "caller": "moduleGetMemUsage",
-      "callee": "NULL"
+      "callee": "moduleMemUsageDefault"
+    },
+    {
+      "caller": "moduleGetMemUsage",
+      "callee": "moduleMemUsageEnhanced"
     }
   ]
 }

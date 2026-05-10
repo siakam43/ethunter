@@ -63,7 +63,7 @@ Curl_cookie_add(struct Curl_easy *data,
     if (!co)
         return NULL;
 
-    firstptr = strdup(lineptr);
+    firstptr = Curl_cstrdup(lineptr);
     for (ptr = firstptr, fields = 0; ptr; ptr = NULL, fields++) {
         switch (fields) {
         case 0:
