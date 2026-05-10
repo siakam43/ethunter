@@ -18,23 +18,28 @@ def extract_functions(tree: ts.Tree, filepath: str) -> list[Function]:
             if func:
                 functions.append(func)
         elif node.type == 'declaration':
-            # Check for function pointer declarations (not function declarations)
-            decl = node
-            declarator = _find_child_by_type(decl, 'function_declarator')
+            # Only match real function declarations (not function pointer declarations)
+            # Function pointer decls have parenthesized_declarator/pointer_declarator nesting
+            declarator = _find_child_by_type(node, 'function_declarator')
             if declarator:
-                ident = _find_child_by_type(declarator, 'identifier')
-                if ident and ident.text:
-                    params_node = _find_child_by_type(declarator, 'parameter_list')
-                    params = _extract_params(params_node) if params_node else []
-                    ret_type = _get_decl_type(decl)
-                    functions.append(Function(
-                        name=ident.text.decode('utf-8'),
-                        file=filepath,
-                        line=node.start_point[0] + 1,
-                        return_type=ret_type,
-                        parameters=params,
-                        is_definition=False,
-                    ))
+                # Skip if the function_declarator wraps a parenthesized_declarator
+                # (that means it's a function pointer, not a real function decl)
+                inner_wrappers = [c for c in declarator.children
+                                  if c.type in ('parenthesized_declarator', 'pointer_declarator')]
+                if not inner_wrappers:
+                    ident = _find_child_by_type(declarator, 'identifier')
+                    if ident and ident.text:
+                        params_node = _find_child_by_type(declarator, 'parameter_list')
+                        params = _extract_params(params_node) if params_node else []
+                        ret_type = _get_decl_type(node)
+                        functions.append(Function(
+                            name=ident.text.decode('utf-8'),
+                            file=filepath,
+                            line=node.start_point[0] + 1,
+                            return_type=ret_type,
+                            parameters=params,
+                            is_definition=False,
+                        ))
         for child in node.children:
             _visit(child)
 
@@ -67,9 +72,17 @@ def _parse_function_definition(node: ts.Node, filepath: str) -> Function | None:
 
 
 def _find_child_by_type(node: ts.Node, type_name: str) -> ts.Node | None:
+    """Find a direct child of the given type, or recurse into pointer/parenthesized declarators."""
     for child in node.children:
         if child.type == type_name:
             return child
+    # For pointer return types like `void *zmalloc(size_t)`,
+    # the function_declarator is nested inside pointer_declarator
+    for child in node.children:
+        if child.type in ('pointer_declarator', 'parenthesized_declarator'):
+            result = _find_child_by_type(child, type_name)
+            if result:
+                return result
     return None
 
 

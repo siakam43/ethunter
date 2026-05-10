@@ -1,8 +1,0 @@
-{
-  "examples": [
-    {
-      "caller": "readConn",
-      "callee": "redisNetRead"
-    }
-  ]
-}

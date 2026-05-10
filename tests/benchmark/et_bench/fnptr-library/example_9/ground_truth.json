@@ -1,0 +1,36 @@
+{
+  "examples": [
+    {
+      "caller": "Curl_llist_remove",
+      "callee": "fileinfo_dtor"
+    },
+    {
+      "caller": "Curl_llist_remove",
+      "callee": "hash_element_dtor"
+    },
+    {
+      "caller": "Curl_llist_remove",
+      "callee": "free_bundle_hash_entry"
+    },
+    {
+      "caller": "Curl_llist_remove",
+      "callee": "freednsentry"
+    },
+    {
+      "caller": "Curl_llist_remove",
+      "callee": "trhash_dtor"
+    },
+    {
+      "caller": "Curl_llist_remove",
+      "callee": "sh_freeentry"
+    },
+    {
+      "caller": "Curl_llist_remove",
+      "callee": "curl_free"
+    },
+    {
+      "caller": "Curl_llist_remove",
+      "callee": "gsasl_free"
+    }
+  ]
+}

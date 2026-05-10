@@ -1,0 +1,20 @@
+{
+  "examples": [
+    {
+      "caller": "md_final_raw_caller",
+      "callee": "tls1_md5_final_raw"
+    },
+    {
+      "caller": "md_final_raw_caller",
+      "callee": "tls1_sha1_final_raw"
+    },
+    {
+      "caller": "md_final_raw_caller",
+      "callee": "tls1_sha256_final_raw"
+    },
+    {
+      "caller": "md_final_raw_caller",
+      "callee": "tls1_sha512_final_raw"
+    }
+  ]
+}

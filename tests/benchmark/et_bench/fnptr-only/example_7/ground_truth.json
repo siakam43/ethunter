@@ -1,0 +1,24 @@
+{
+  "examples": [
+    {
+      "caller": "zstream_do_decompress",
+      "callee": "lzjb_decompress"
+    },
+    {
+      "caller": "zstream_do_decompress",
+      "callee": "gzip_decompress"
+    },
+    {
+      "caller": "zstream_do_decompress",
+      "callee": "zle_decompress"
+    },
+    {
+      "caller": "zstream_do_decompress",
+      "callee": "lz4_decompress_zfs"
+    },
+    {
+      "caller": "zstream_do_decompress",
+      "callee": "zfs_zstd_decompress"
+    }
+  ]
+}

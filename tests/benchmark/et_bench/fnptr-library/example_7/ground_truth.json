@@ -1,0 +1,16 @@
+{
+  "examples": [
+    {
+      "caller": "connSetWriteHandlerWithBarrier",
+      "callee": "connSocketSetWriteHandler"
+    },
+    {
+      "caller": "connSetWriteHandlerWithBarrier",
+      "callee": "connTLSSetWriteHandler"
+    },
+    {
+      "caller": "connSetWriteHandlerWithBarrier",
+      "callee": "connUnixSetWriteHandler"
+    }
+  ]
+}

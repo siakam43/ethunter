@@ -1,8 +1,0 @@
-{
-  "examples": [
-    {
-      "caller": "sk_api_version_caller",
-      "callee": "sk_api_version"
-    }
-  ]
-}

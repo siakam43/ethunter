@@ -1,8 +1,0 @@
-{
-  "examples": [
-    {
-      "caller": "do_log",
-      "callee": "mm_log_handler"
-    }
-  ]
-}

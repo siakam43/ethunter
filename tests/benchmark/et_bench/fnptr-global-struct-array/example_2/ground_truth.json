@@ -1,0 +1,5 @@
+{
+  "examples": [
+    {"caller": "curl_version_info", "callee": "https_proxy_present"}
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "examples": [
+    {"caller": "sha256_update", "callee": "sha256_generic"},
+    {"caller": "sha256_update", "callee": "sha512_generic"},
+    {"caller": "sha256_update", "callee": "tf_sha512_transform_x64"},
+    {"caller": "sha256_update", "callee": "tf_sha256_transform_x64"}
+  ]
+}

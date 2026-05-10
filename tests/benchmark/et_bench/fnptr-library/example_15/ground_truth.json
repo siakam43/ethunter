@@ -1,0 +1,16 @@
+{
+  "examples": [
+    {
+      "caller": "apply_mdct",
+      "callee": "vector_fmul_c"
+    },
+    {
+      "caller": "apply_mdct",
+      "callee": "ff_vector_fmul_neon"
+    },
+    {
+      "caller": "apply_mdct",
+      "callee": "ff_vector_fmul_vfp"
+    }
+  ]
+}

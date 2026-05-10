@@ -1,0 +1,29 @@
+{
+  "examples": [
+    {"caller": "v360_slice", "callee": "equirect_to_xyz"},
+    {"caller": "v360_slice", "callee": "cube3x2_to_xyz"},
+    {"caller": "v360_slice", "callee": "cube1x6_to_xyz"},
+    {"caller": "v360_slice", "callee": "cube6x1_to_xyz"},
+    {"caller": "v360_slice", "callee": "eac_to_xyz"},
+    {"caller": "v360_slice", "callee": "flat_to_xyz"},
+    {"caller": "v360_slice", "callee": "dfisheye_to_xyz"},
+    {"caller": "v360_slice", "callee": "barrel_to_xyz"},
+    {"caller": "v360_slice", "callee": "stereographic_to_xyz"},
+    {"caller": "v360_slice", "callee": "mercator_to_xyz"},
+    {"caller": "v360_slice", "callee": "ball_to_xyz"},
+    {"caller": "v360_slice", "callee": "hammer_to_xyz"},
+    {"caller": "v360_slice", "callee": "sinusoidal_to_xyz"},
+    {"caller": "v360_slice", "callee": "fisheye_to_xyz"},
+    {"caller": "v360_slice", "callee": "pannini_to_xyz"},
+    {"caller": "v360_slice", "callee": "cylindrical_to_xyz"},
+    {"caller": "v360_slice", "callee": "cylindricalea_to_xyz"},
+    {"caller": "v360_slice", "callee": "perspective_to_xyz"},
+    {"caller": "v360_slice", "callee": "tetrahedron_to_xyz"},
+    {"caller": "v360_slice", "callee": "barrelsplit_to_xyz"},
+    {"caller": "v360_slice", "callee": "tspyramid_to_xyz"},
+    {"caller": "v360_slice", "callee": "hequirect_to_xyz"},
+    {"caller": "v360_slice", "callee": "equisolid_to_xyz"},
+    {"caller": "v360_slice", "callee": "orthographic_to_xyz"},
+    {"caller": "v360_slice", "callee": "octahedron_to_xyz"}
+  ]
+}

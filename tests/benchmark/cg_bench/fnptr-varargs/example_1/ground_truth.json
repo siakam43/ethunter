@@ -1,8 +1,0 @@
-{
-  "examples": [
-    {
-      "caller": "curl_share_cleanup",
-      "callee": "my_lock"
-    }
-  ]
-}

@@ -1,0 +1,12 @@
+{
+  "examples": [
+    {
+      "caller": "socket_readable",
+      "callee": "ssl_read"
+    },
+    {
+      "caller": "socket_readable",
+      "callee": "sock_read"
+    }
+  ]
+}

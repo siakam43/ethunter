@@ -1,8 +1,0 @@
-{
-  "examples": [
-    {
-      "caller": "dynamic_load",
-      "callee": "bind_engine"
-    }
-  ]
-}

@@ -1,0 +1,8 @@
+{
+  "examples": [
+    {
+      "caller": "zmalloc",
+      "callee": "zmalloc_default_oom"
+    }
+  ]
+}

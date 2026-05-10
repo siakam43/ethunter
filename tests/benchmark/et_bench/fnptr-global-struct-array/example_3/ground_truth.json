@@ -1,0 +1,8 @@
+{
+  "examples": [
+    {"caller": "ourWriteOutJSON", "callee": "writeLong"},
+    {"caller": "ourWriteOutJSON", "callee": "writeOffset"},
+    {"caller": "ourWriteOutJSON", "callee": "writeString"},
+    {"caller": "ourWriteOutJSON", "callee": "writeTime"}
+  ]
+}

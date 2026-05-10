@@ -1,8 +1,0 @@
-{
-  "examples": [
-    {
-      "caller": "sshkey_new",
-      "callee": "ssh_rsa_alloc"
-    }
-  ]
-}

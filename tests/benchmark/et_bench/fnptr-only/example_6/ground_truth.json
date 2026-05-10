@@ -1,0 +1,8 @@
+{
+  "examples": [
+    {
+      "caller": "do_rallocx",
+      "callee": "default_junk_alloc"
+    }
+  ]
+}

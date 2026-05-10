@@ -1,8 +1,0 @@
-{
-  "examples": [
-    {
-      "caller": "fmd_case_close",
-      "callee": "zfs_fm_close"
-    }
-  ]
-}

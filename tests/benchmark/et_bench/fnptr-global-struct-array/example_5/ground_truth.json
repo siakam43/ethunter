@@ -1,0 +1,6 @@
+{
+  "examples": [
+    {"caller": "sa_commit_shares", "callee": "nfs_commit_shares"},
+    {"caller": "sa_commit_shares", "callee": "smb_update_shares"}
+  ]
+}

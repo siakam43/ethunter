@@ -1,8 +1,0 @@
-{
-  "examples": [
-    {
-      "caller": "hpa_hooks_curtime",
-      "callee": "nstime_update_impl"
-    }
-  ]
-}

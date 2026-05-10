@@ -1,8 +1,0 @@
-{
-  "examples": [
-    {
-      "caller": "channel_handle_wfd",
-      "callee": "sys_tun_outfilter"
-    }
-  ]
-}

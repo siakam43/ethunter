@@ -1,0 +1,13 @@
+{
+  "examples": [
+    {"caller": "mux_master_read_cb", "callee": "mux_master_process_hello"},
+    {"caller": "mux_master_read_cb", "callee": "mux_master_process_new_session"},
+    {"caller": "mux_master_read_cb", "callee": "mux_master_process_alive_check"},
+    {"caller": "mux_master_read_cb", "callee": "mux_master_process_terminate"},
+    {"caller": "mux_master_read_cb", "callee": "mux_master_process_open_fwd"},
+    {"caller": "mux_master_read_cb", "callee": "mux_master_process_close_fwd"},
+    {"caller": "mux_master_read_cb", "callee": "mux_master_process_stdio_fwd"},
+    {"caller": "mux_master_read_cb", "callee": "mux_master_process_stop_listening"},
+    {"caller": "mux_master_read_cb", "callee": "mux_master_process_proxy"}
+  ]
+}
