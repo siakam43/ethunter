@@ -187,3 +187,59 @@ class TestHasattrDowngrade:
         assert hasattr(eng, 'resolve_call_site_param')
         assert hasattr(eng, 'register_return')
         assert hasattr(eng, 'resolve_returned_field')
+
+
+class TestInitializerAssignUnwrapCast:
+    """initializer_assign with nested cast in designated initializer."""
+
+    def test_nested_cast_in_designated_initializer(self):
+        """.field = (T1)(T2)func should extract func as target (truly nested cast)."""
+        from ethunter.analyzer import initializer_assign
+
+        lang = Language(tsc.language())
+        parser = Parser(lang)
+
+        source = b'''
+void my_handler(void) {}
+typedef struct { void (*cb)(void); } ops_t;
+void init(void) {
+    ops_t o = { .cb = (void (*)(void))(unsigned long)my_handler };
+}
+'''
+        tree = parser.parse(source)
+
+        st = SymbolTable()
+        for func in extract_functions(tree, 'test.c'):
+            st.add_function(func)
+
+        df = DataflowEngine()
+        initializer_assign.analyze(tree, 'test.c', st, df)
+
+        targets = df.resolve('<gstruct:o.cb>')
+        assert 'my_handler' in targets
+
+    def test_variable_state_still_works(self):
+        """When VariableState is passed (not DataflowEngine), existing behavior is preserved."""
+        from ethunter.analyzer import initializer_assign
+
+        lang = Language(tsc.language())
+        parser = Parser(lang)
+
+        source = b'''
+void my_handler(void) {}
+void init(void) {
+    ops_t o = { .cb = my_handler };
+}
+typedef struct { void (*cb)(void); } ops_t;
+'''
+        tree = parser.parse(source)
+
+        st = SymbolTable()
+        for func in extract_functions(tree, 'test.c'):
+            st.add_function(func)
+
+        vs = VariableState()
+        initializer_assign.analyze(tree, 'test.c', st, vs)
+
+        targets = vs.resolve('<gstruct:o.cb>')
+        assert 'my_handler' in targets

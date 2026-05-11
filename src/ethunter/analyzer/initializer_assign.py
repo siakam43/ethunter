@@ -27,6 +27,12 @@ def analyze(
 
     def _extract_cast_target(node: ts.Node) -> str | None:
         """Extract function name from inside a cast_expression."""
+        # Try unwrap_cast if dataflow has it (DataflowEngine)
+        if hasattr(dataflow, 'unwrap_cast'):
+            result = dataflow.unwrap_cast(node)
+            if result and result in symbol_names:
+                return result
+        # Fallback: original single-level logic
         if node.type == 'cast_expression':
             value = node.child_by_field_name('value')
             if value and value.type == 'identifier' and value.text:
