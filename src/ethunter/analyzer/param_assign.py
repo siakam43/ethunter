@@ -27,6 +27,97 @@ def _is_registration(name: str) -> bool:
     return any(p in lower for p in REG_PATTERNS)
 
 
+def _find_child(node, type_name: str):
+    """Find a direct child of the given type."""
+    for c in node.children:
+        if c.type == type_name:
+            return c
+    return None
+
+
+def _extract_field_operand(field_expr) -> str | None:
+    """Extract the base identifier from a field_expression.
+
+    e.g., 'ctx->ext.alpn_select_cb' -> 'ctx'
+    """
+    for child in field_expr.children:
+        if child.type == 'field_expression':
+            return _extract_field_operand(child)
+        if child.type == 'identifier' and child.text:
+            return child.text.decode('utf-8')
+    return None
+
+
+def _try_register_param_to_field(
+    lhs, rhs, param_name: str, field_path: str,
+    enclosing_func: str | None, func_params: dict,
+    dataflow,
+) -> None:
+    """Register param->field mapping if RHS is a function parameter.
+
+    Called from _visit when we detect: field_expression = identifier(param_name).
+    """
+    if not enclosing_func or enclosing_func not in func_params:
+        return
+    params = func_params[enclosing_func]
+    if param_name not in params:
+        return
+    param_idx = params.index(param_name)
+    lhs_operand = _extract_field_operand(lhs)
+    if not lhs_operand or lhs_operand not in params:
+        return
+    struct_param_idx = params.index(lhs_operand)
+    if hasattr(dataflow, 'register_param_mapping'):
+        dataflow.register_param_mapping(
+            enclosing_func, param_idx, field_path, struct_param_idx
+        )
+
+
+def _collect_func_params(node, func_params: dict) -> None:
+    """Collect function parameter lists from function definitions."""
+    if node.type == 'function_definition':
+        decl = _find_child(node, 'function_declarator')
+        if not decl:
+            for c in node.children:
+                if c.type in ('pointer_declarator', 'parenthesized_declarator'):
+                    d = _find_child(c, 'function_declarator')
+                    if d:
+                        decl = d
+                        break
+        if decl:
+            func_name_node = _find_child(decl, 'identifier')
+            if func_name_node and func_name_node.text:
+                fname = func_name_node.text.decode('utf-8')
+                params = []
+                plist = _find_child(decl, 'parameter_list')
+                if plist:
+                    for p in plist.children:
+                        if p.type == 'parameter_declaration':
+                            pname = _extract_param_name(p)
+                            if pname:
+                                params.append(pname)
+                func_params[fname] = params
+    for child in node.children:
+        _collect_func_params(child, func_params)
+
+
+def _extract_param_name(param_decl) -> str | None:
+    """Extract parameter name from parameter_declaration, recursively."""
+    def _search(node, depth: int = 0) -> str | None:
+        if node.type == 'identifier' and node.text and depth < 10:
+            return node.text.decode('utf-8')
+        for c in node.children:
+            if c.type in ('parenthesized_declarator', 'pointer_declarator',
+                          'array_declarator', 'function_declarator'):
+                result = _search(c, depth + 1)
+                if result:
+                    return result
+            if c.type == 'identifier' and c.text:
+                return c.text.decode('utf-8')
+        return None
+    return _search(param_decl)
+
+
 def analyze(
     tree: ts.Tree,
     filepath: str,
@@ -37,73 +128,52 @@ def analyze(
     edges: list[CallEdge] = []
     symbol_names = symbol_table.all_function_names
 
-    # Collect function definitions with their parameter lists
     func_params: dict[str, list[str]] = {}  # func_name -> [param_names]
 
-    def _extract_param_name(param_decl: ts.Node) -> str | None:
-        """Extract parameter name from parameter_declaration, recursively."""
-        def _search(node: ts.Node, depth: int = 0) -> str | None:
-            if node.type == 'identifier' and node.text and depth < 10:
-                return node.text.decode('utf-8')
-            for c in node.children:
-                if c.type in ('parenthesized_declarator', 'pointer_declarator',
-                              'array_declarator', 'function_declarator'):
-                    result = _search(c, depth + 1)
-                    if result:
-                        return result
-                if c.type == 'identifier' and c.text:
-                    return c.text.decode('utf-8')
-            return None
-        return _search(param_decl)
+    _collect_func_params(tree.root_node, func_params)
 
-    def _collect_func_params(node: ts.Node) -> None:
-        if node.type == 'function_definition':
-            # Find function_declarator (may be nested)
-            decl = _find_child(node, 'function_declarator')
-            if not decl:
-                for c in node.children:
-                    if c.type in ('pointer_declarator', 'parenthesized_declarator'):
-                        d = _find_child(c, 'function_declarator')
-                        if d:
-                            decl = d
-                            break
-            if decl:
-                func_name_node = _find_child(decl, 'identifier')
-                if func_name_node and func_name_node.text:
-                    fname = func_name_node.text.decode('utf-8')
-                    params = []
-                    plist = _find_child(decl, 'parameter_list')
-                    if plist:
-                        for p in plist.children:
-                            if p.type == 'parameter_declaration':
-                                pname = _extract_param_name(p)
-                                if pname:
-                                    params.append(pname)
-                    func_params[fname] = params
-        for child in node.children:
-            _collect_func_params(child)
+    # === Collect return value tracking ===
+    if hasattr(dataflow, 'register_return'):
+        def _collect_returns(node) -> None:
+            if node.type == 'function_definition':
+                decl = _find_child(node, 'function_declarator')
+                if not decl:
+                    for c in node.children:
+                        if c.type in ('pointer_declarator', 'parenthesized_declarator'):
+                            d = _find_child(c, 'function_declarator')
+                            if d:
+                                decl = d
+                                break
+                if not decl:
+                    for child in node.children:
+                        _collect_returns(child)
+                    return
+                fname_node = _find_child(decl, 'identifier')
+                if not fname_node or not fname_node.text:
+                    for child in node.children:
+                        _collect_returns(child)
+                    return
+                fname = fname_node.text.decode('utf-8')
+                params = func_params.get(fname, [])
 
-    def _find_child(node: ts.Node, type_name: str) -> ts.Node | None:
-        for c in node.children:
-            if c.type == type_name:
-                return c
-        return None
+                body = _find_child(node, 'compound_statement')
+                if body:
+                    def _scan_returns(n) -> None:
+                        if n.type == 'return_statement':
+                            for c in n.children:
+                                if c.type == 'field_expression':
+                                    field_path = extract_field_path(c)
+                                    if field_path:
+                                        operand = _extract_field_operand(c)
+                                        if operand and operand in params:
+                                            dataflow.register_return(fname, field_path)
+                        for child in n.children:
+                            _scan_returns(child)
+                    _scan_returns(body)
+            for child in node.children:
+                _collect_returns(child)
 
-    def _count_param_position(args: ts.Node, target_index: int) -> int:
-        """Find the 0-based param position of an identifier at the given child index in arguments."""
-        # args children: (, arg0, comma, arg1, comma, ..., )
-        # Count commas before the target child index
-        pos = 0
-        for c in args.children:
-            if c == target_index:
-                return pos
-            if c.type == ',':
-                pos += 1
-            elif c.type != '(':
-                pos += 1
-        return -1
-
-    _collect_func_params(tree.root_node)
+        _collect_returns(tree.root_node)
 
     # === Pass 1: collect param mappings from call sites ===
     param_mappings: dict[str, set[str]] = {}  # param_name -> {target_func, ...}
@@ -154,25 +224,38 @@ def analyze(
         if node.type == 'assignment_expression':
             lhs = node.child_by_field_name('left') or node.children[0]
             rhs = node.child_by_field_name('right') or node.children[1]
-            if lhs and rhs and rhs.type == 'identifier' and rhs.text:
-                param_name = rhs.text.decode('utf-8')
-                if lhs.type == 'field_expression':
-                    field_path = extract_field_path(lhs)
-                    if field_path:
-                        # Resolve param to actual functions
+            if lhs and rhs and lhs.type == 'field_expression':
+                field_path = extract_field_path(lhs)
+                if field_path:
+                    # === Case A: RHS is identifier (existing + registration) ===
+                    if rhs.type == 'identifier' and rhs.text:
+                        param_name = rhs.text.decode('utf-8')
+                        # EXISTING: resolve param to actual functions
                         targets = param_mappings.get(param_name, set())
                         for t in targets:
                             dataflow.assign(f'<struct:{field_path}>', t)
-                        # Also check dataflow (direct_assign may have populated it)
                         df_targets = dataflow.resolve(param_name)
-                        # Fallback: check <garray:name> for array-initialized globals
                         if not df_targets:
                             df_targets = dataflow.resolve(f'<garray:{param_name}>')
                         for t in df_targets:
                             dataflow.assign(f'<struct:{field_path}>', t)
-                            # Also store as <struct:last_component> for alias variables
                             field_name = field_path.split('.')[-1]
                             dataflow.assign(f'<struct:{field_name}>', t)
+                        # NEW: register for cross-function propagation
+                        enclosing_func = find_enclosing_function(node, tree.root_node)
+                        _try_register_param_to_field(
+                            lhs, rhs, param_name, field_path,
+                            enclosing_func, func_params, dataflow
+                        )
+                    # === Case B: RHS is call_expression (return value tracking) ===
+                    elif rhs.type == 'call_expression':
+                        call_func = rhs.child_by_field_name('function') or rhs.children[0]
+                        if call_func and call_func.type == 'identifier' and call_func.text:
+                            func_name = call_func.text.decode('utf-8')
+                            if hasattr(dataflow, 'resolve_returned_field'):
+                                ret_targets = dataflow.resolve_returned_field(func_name)
+                                for t in ret_targets:
+                                    dataflow.assign(f'<gstruct:{field_path}>', t)
         for child in node.children:
             _visit(child)
 
