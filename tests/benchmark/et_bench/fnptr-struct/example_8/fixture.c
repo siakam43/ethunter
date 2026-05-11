@@ -1,7 +1,7 @@
 /* ET-Bench fixture: fnptr-struct/example_8 */
 /* Scenario: OpenSSL EVP_PKEY ASN1 method security bits dispatch.
    fnptr: pkey->ameth->pkey_security_bits
-   targets: NULL (guarded by null check before call)
+   targets: rsa_pkey_security_bits (wired via bind_asn1_methods)
    caller: EVP_PKEY_security_bits */
 
 #include <stddef.h>

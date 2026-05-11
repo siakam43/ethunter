@@ -1,7 +1,7 @@
 /* ET-Bench fixture: fnptr-struct/example_10 */
 /* Scenario: OpenSSL DSA method — bn_mod_exp through DSA_METHOD vtable.
    fnptr: dsa->meth->bn_mod_exp
-   target: NULL (checked before call, no actual target)
+   target: BN_mod_exp_mont (wired via bind_dsa_methods)
    caller: dsa_sign_setup */
 
 #include <stddef.h>
