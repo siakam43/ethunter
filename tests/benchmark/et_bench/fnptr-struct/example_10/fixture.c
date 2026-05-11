@@ -204,7 +204,8 @@ int capi_init(ENGINE *e) {
                                               BN_MONT_CTX *))DSA_meth_get_mod_exp(ossl_dsa_meth))
         || !DSA_meth_set_bn_mod_exp(capi_dsa_method,
                                 (int (*)(DSA *, BIGNUM *, const BIGNUM *, const BIGNUM *,
-                                          const BIGNUM *, BN_CTX *, BN_MONT_CTX *))DSA_meth_get_bn_mod_exp(ossl_dsa_meth))) {
+                                          const BIGNUM *, BN_CTX *, BN_MONT_CTX *))DSA_meth_get_bn_mod_exp(ossl_dsa_meth))
+        || !bind_dsa_methods(capi_dsa_method)) {
         return 0;
     }
     return 1;
