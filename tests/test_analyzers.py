@@ -172,6 +172,17 @@ def test_field_call_simple():
     assert 'fs_read' in callees
 
 
+def test_field_call_subscript():
+    """Test arr[i]->field() pattern — extract_field_path handles subscript."""
+    from ethunter.analyzer import initializer_assign, field_call
+    tree, st, df = _make_analyzer_env('field_call_subscript.c')
+    initializer_assign.analyze(tree, 'field_call_subscript.c', st, df)
+    edges = field_call.analyze(tree, 'field_call_subscript.c', st, df)
+    callees = {e.callee for e in edges}
+    assert 'handler_a' in callees
+    assert 'handler_b' in callees
+
+
 def test_field_call_chain():
     from ethunter.analyzer import initializer_assign, field_call
     tree, st, df = _make_analyzer_env('field_call_complex.c')
