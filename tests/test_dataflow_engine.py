@@ -318,3 +318,151 @@ void SSL_CTX_set_alpn_select_cb(void *ctx, void (*cb)(void)) {
         vs = VariableState()
         edges = param_assign.analyze(tree, 'test.c', st, vs)
         assert isinstance(edges, list)
+
+
+class TestParamAssignCallSitePropagation:
+    """param_assign propagates targets at call sites and handles cast args."""
+
+    def test_call_site_propagates_bare_function_to_field(self):
+        """custom_assign_alpn(ctx, alpn_cb) -> field gets alpn_cb target.
+
+        Uses the single-file param_mappings chain: call-site arg → param_name → struct field.
+        The cross-file param_fields chain (resolve_call_site_param) is tested in
+        test_cross_file_param_registration (Task 7).
+
+        NOTE: Function name must NOT match any REG_PATTERNS (set_, register_, etc.)
+        or it will be treated as a registration call instead of populating param_mappings.
+        """
+        from ethunter.analyzer import param_assign
+
+        lang = Language(tsc.language())
+        parser = Parser(lang)
+
+        source = b'''
+void alpn_cb(void *ctx) {}
+void custom_assign_alpn(void *ctx, void (*cb)(void)) {
+    ctx->ext.alpn_select_cb = cb;
+}
+void s_server_main(void) {
+    custom_assign_alpn(ctx, alpn_cb);
+}
+'''
+        tree = parser.parse(source)
+
+        st = SymbolTable()
+        for func in extract_functions(tree, 'test.c'):
+            st.add_function(func)
+
+        df = DataflowEngine()
+        param_assign.analyze(tree, 'test.c', st, df)
+
+        targets = df.resolve('<struct:ctx.ext.alpn_select_cb>')
+        assert 'alpn_cb' in targets
+
+    def test_call_site_cast_wrapped_arg(self):
+        """CRYPTO_gcm128_init(..., (block128_f)aesni_encrypt) -> extracts aesni_encrypt."""
+        from ethunter.analyzer import param_assign
+
+        lang = Language(tsc.language())
+        parser = Parser(lang)
+
+        source = b'''
+void aesni_encrypt(void *ctx) {}
+void CRYPTO_gcm128_init(void *ctx, void *key, void (*block)(void *k)) {
+    ctx->block = block;
+}
+void aesni_gcm_init_key(void) {
+    CRYPTO_gcm128_init(&gctx, &ks, (void (*)(void *))aesni_encrypt);
+}
+'''
+        tree = parser.parse(source)
+
+        st = SymbolTable()
+        for func in extract_functions(tree, 'test.c'):
+            st.add_function(func)
+
+        df = DataflowEngine()
+        param_assign.analyze(tree, 'test.c', st, df)
+
+        targets = df.resolve('<struct:ctx.block>')
+        assert 'aesni_encrypt' in targets
+
+    def test_rhs_call_expression_assignment(self):
+        """sdb.old_cb = SSL_CTX_get_security_callback(ctx) -> resolves via ret_fields."""
+        from ethunter.analyzer import param_assign
+
+        lang = Language(tsc.language())
+        parser = Parser(lang)
+
+        source = b'''
+void ssl_security_default_callback(void) {}
+void *SSL_CTX_get_security_callback(void *ctx) {
+    return ctx->cert->sec_cb;
+}
+void ssl_ctx_security_debug(void *ctx) {
+    struct { void (*old_cb)(void); } sdb;
+    sdb.old_cb = SSL_CTX_get_security_callback(ctx);
+}
+void setup(void *ctx) {
+    ctx->cert->sec_cb = ssl_security_default_callback;
+}
+'''
+        tree = parser.parse(source)
+
+        st = SymbolTable()
+        for func in extract_functions(tree, 'test.c'):
+            st.add_function(func)
+
+        df = DataflowEngine()
+        # Pre-populate dataflow as field_call would:
+        # setup() writes ctx->cert->sec_cb = ssl_security_default_callback
+        df.assign('<gstruct:ctx.cert.sec_cb>', 'ssl_security_default_callback')
+        param_assign.analyze(tree, 'test.c', st, df)
+
+        targets = df.resolve('<gstruct:sdb.old_cb>')
+        assert 'ssl_security_default_callback' in targets
+
+    def test_example_13_chain_through_local_fp(self):
+        """End-to-end: param_assign -> dataflow -> local_fp_tracker -> direct_call_fp.
+
+        Verifies the full chain for example_13:
+        1. param_assign extracts aesni_encrypt from cast arg
+        2. param_assign registers ctx->block = aesni_encrypt
+        3. local_fp_tracker reads <struct:ctx->block> -> {aesni_encrypt}
+        """
+        from ethunter.analyzer import param_assign
+        from ethunter.analyzer.local_fp_tracker import collect_local_fp_assignments
+
+        lang = Language(tsc.language())
+        parser = Parser(lang)
+
+        source = b'''
+void aesni_encrypt(void *ctx) {}
+void CRYPTO_gcm128_init(void *ctx, void *key, void (*block)(void *k)) {
+    ctx->block = block;
+}
+void CRYPTO_gcm128_encrypt(void *ctx) {
+    void (*block)(void *k) = ctx->block;
+    (*block)(ctx);
+}
+void aesni_gcm_init_key(void) {
+    CRYPTO_gcm128_init(&gctx, &ks, (void (*)(void *))aesni_encrypt);
+}
+'''
+        tree = parser.parse(source)
+
+        st = SymbolTable()
+        for func in extract_functions(tree, 'test.c'):
+            st.add_function(func)
+
+        df = DataflowEngine()
+        param_assign.analyze(tree, 'test.c', st, df)
+
+        # Step 1+2: dataflow has ctx.block mapped
+        assert 'aesni_encrypt' in df.resolve('<struct:ctx.block>')
+
+        # Step 3: local_fp_tracker can read it
+        symbol_names = st.all_function_names
+        local_mapping = collect_local_fp_assignments(tree, df, symbol_names)
+        assert 'block' in local_mapping
+        assert 'aesni_encrypt' in local_mapping['block']

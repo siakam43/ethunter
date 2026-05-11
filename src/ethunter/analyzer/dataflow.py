@@ -68,6 +68,13 @@ class DataflowEngine:
     def targets(self) -> dict[str, set[str]]:
         return self.state.targets
 
+    def register_callback(self, func_name: str) -> None:
+        self.state.register_callback(func_name)
+
+    @property
+    def registered_callbacks(self) -> set[str]:
+        return self.state.registered_callbacks
+
     # === New: ParamTracker ===
 
     def register_param_mapping(

@@ -118,6 +118,20 @@ def _extract_param_name(param_decl) -> str | None:
     return _search(param_decl)
 
 
+def _propagate_call_site(
+    call_name: str, arg_idx: int, target: str,
+    dataflow, symbol_names: set[str],
+) -> None:
+    """Propagate a call-site argument target to registered field paths.
+
+    Uses DataflowEngine.resolve_call_site_param if available (hasattr guard).
+    """
+    if hasattr(dataflow, 'resolve_call_site_param'):
+        dataflow.resolve_call_site_param(
+            call_name, arg_idx, target, symbol_names=symbol_names
+        )
+
+
 def analyze(
     tree: ts.Tree,
     filepath: str,
@@ -214,6 +228,43 @@ def analyze(
                                         if pname not in param_mappings:
                                             param_mappings[pname] = set()
                                         param_mappings[pname].add(target)
+                                _propagate_call_site(
+                                    call_name, arg_idx, target,
+                                    dataflow, symbol_names
+                                )
+                        elif c.type == 'cast_expression':
+                            # Extract identifier from nested cast
+                            extracted = None
+                            if hasattr(dataflow, 'unwrap_cast'):
+                                extracted = dataflow.unwrap_cast(c)
+                            if not extracted:
+                                for cc in reversed(c.children):
+                                    if cc.type == 'identifier' and cc.text:
+                                        extracted = cc.text.decode('utf-8')
+                                        break
+                            if extracted and extracted in symbol_names:
+                                arg_idx = comma_count
+                                target = extracted
+                                if _is_registration(call_name):
+                                    dataflow.register_callback(target)
+                                    edges.append(CallEdge(
+                                        caller=caller or '<registration>',
+                                        callee=target,
+                                        caller_file=filepath,
+                                        callee_file='',
+                                        type=CallType.INDIRECT,
+                                        indirect_kind='callback_reg',
+                                        caller_line=node.start_point[0] + 1,
+                                    ))
+                                elif arg_idx < len(param_names):
+                                    pname = param_names[arg_idx]
+                                    if pname not in param_mappings:
+                                        param_mappings[pname] = set()
+                                    param_mappings[pname].add(target)
+                                _propagate_call_site(
+                                    call_name, arg_idx, target,
+                                    dataflow, symbol_names
+                                )
         for child in node.children:
             _collect_call_params(child)
 
