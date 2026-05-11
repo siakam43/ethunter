@@ -43,8 +43,13 @@ def run_all_analyses(
     dataflow: VariableState,
 ) -> CallGraph:
     """Run all analyzer modules on the parsed trees and build the CallGraph."""
+    from ethunter.analyzer.dataflow import DataflowEngine
+
     graph = CallGraph()
     symbol_names = symbol_table.all_function_names
+
+    # Wrap dataflow in DataflowEngine for cross-function tracking
+    engine = DataflowEngine(state=dataflow)
 
     # Add all functions to the graph
     for func_name in symbol_names:
@@ -57,35 +62,41 @@ def run_all_analyses(
         for edge in edges:
             graph.add_edge(edge)
 
-    # Phase 1: Target resolution (writes to dataflow)
+    # Phase 1a: Pre-scan all files for param->field registrations.
+    # This ensures engine.param_fields is fully populated BEFORE any file's
+    # Phase 1 call-site propagation tries to use it (fixes cross-file timing).
+    for filepath, tree in trees.items():
+        param_assign._register_phase(tree, filepath, symbol_table, engine)
+
+    # Phase 1: Target resolution (writes to dataflow via engine)
     for filepath, tree in trees.items():
         for resolver in TARGET_RESOLVERS:
             resolver.analyze(
                 tree=tree,
                 filepath=filepath,
                 symbol_table=symbol_table,
-                dataflow=dataflow,
+                dataflow=engine,
             )
 
-    # Phase 1b: param_assign callback detection (returns edges for registration patterns)
+    # Phase 1b: param_assign callback detection
     for filepath, tree in trees.items():
         edges = param_assign.analyze(
             tree=tree,
             filepath=filepath,
             symbol_table=symbol_table,
-            dataflow=dataflow,
+            dataflow=engine,
         )
         for edge in edges:
             graph.add_edge(edge)
 
-    # Phase 2: Call detection (reads from dataflow)
+    # Phase 2: Call detection (reads from dataflow via engine)
     for filepath, tree in trees.items():
         for detector in CALL_DETECTORS:
             edges = detector.analyze(
                 tree=tree,
                 filepath=filepath,
                 symbol_table=symbol_table,
-                dataflow=dataflow,
+                dataflow=engine,
             )
             for edge in edges:
                 graph.add_edge(edge)
@@ -96,7 +107,7 @@ def run_all_analyses(
             tree=tree,
             filepath=filepath,
             symbol_table=symbol_table,
-            dataflow=dataflow,
+            dataflow=engine,
         )
         for edge in edges:
             graph.add_edge(edge)

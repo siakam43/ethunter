@@ -118,6 +118,88 @@ def _extract_param_name(param_decl) -> str | None:
     return _search(param_decl)
 
 
+def _register_phase(
+    tree: ts.Tree,
+    filepath: str,
+    symbol_table: SymbolTable,
+    dataflow,
+) -> None:
+    """Phase 1a: pre-scan for param->field registrations only.
+
+    This populates engine.param_fields and engine.ret_fields across ALL files
+    BEFORE any call-site propagation runs. No edges are emitted, no dataflow writes.
+
+    Called from orchestrator.run_all_analyses() before Phase 1.
+    """
+    if not hasattr(dataflow, 'register_param_mapping') and not hasattr(dataflow, 'register_return'):
+        return  # VariableState passed — nothing to register
+
+    func_params: dict[str, list[str]] = {}
+    _collect_func_params(tree.root_node, func_params)
+
+    # Scan for field = param patterns -> register_param_mapping
+    if hasattr(dataflow, 'register_param_mapping'):
+        def _scan_field_assigns(node: ts.Node) -> None:
+            if node.type == 'assignment_expression':
+                lhs = node.child_by_field_name('left') or node.children[0]
+                rhs = node.child_by_field_name('right') or node.children[1]
+                if lhs and rhs and lhs.type == 'field_expression' and rhs.type == 'identifier' and rhs.text:
+                    param_name = rhs.text.decode('utf-8')
+                    field_path = extract_field_path(lhs)
+                    if field_path:
+                        enclosing_func = find_enclosing_function(node, tree.root_node)
+                        _try_register_param_to_field(
+                            lhs, rhs, param_name, field_path,
+                            enclosing_func, func_params, dataflow
+                        )
+            for child in node.children:
+                _scan_field_assigns(child)
+
+        _scan_field_assigns(tree.root_node)
+
+    # Scan for return field_expression -> register_return
+    if hasattr(dataflow, 'register_return'):
+        def _scan_returns(node: ts.Node) -> None:
+            if node.type == 'function_definition':
+                decl = _find_child(node, 'function_declarator')
+                if not decl:
+                    for c in node.children:
+                        if c.type in ('pointer_declarator', 'parenthesized_declarator'):
+                            d = _find_child(c, 'function_declarator')
+                            if d:
+                                decl = d
+                                break
+                if not decl:
+                    for child in node.children:
+                        _scan_returns(child)
+                    return
+                fname_node = _find_child(decl, 'identifier')
+                if not fname_node or not fname_node.text:
+                    for child in node.children:
+                        _scan_returns(child)
+                    return
+                fname = fname_node.text.decode('utf-8')
+                params = func_params.get(fname, [])
+                body = _find_child(node, 'compound_statement')
+                if body:
+                    def _scan_body(n: ts.Node) -> None:
+                        if n.type == 'return_statement':
+                            for c in n.children:
+                                if c.type == 'field_expression':
+                                    fp = extract_field_path(c)
+                                    if fp:
+                                        operand = _extract_field_operand(c)
+                                        if operand and operand in params:
+                                            dataflow.register_return(fname, fp)
+                        for child in n.children:
+                            _scan_body(child)
+                    _scan_body(body)
+            for child in node.children:
+                _scan_returns(child)
+
+        _scan_returns(tree.root_node)
+
+
 def _propagate_call_site(
     call_name: str, arg_idx: int, target: str,
     dataflow, symbol_names: set[str],
