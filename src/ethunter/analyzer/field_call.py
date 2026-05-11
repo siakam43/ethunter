@@ -6,9 +6,12 @@ Detects calls through struct field access:
 - ptr->chain->field()  (chain access)
 
 Also tracks field assignments (obj.field = func) for dataflow lookup.
+Handles macro-expanded field calls: #define MACRO(...) obj.field(...)
 """
 
 from __future__ import annotations
+
+import re
 
 import tree_sitter as ts
 
@@ -16,6 +19,40 @@ from ethunter.graph.model import CallEdge, CallType
 from ethunter.analyzer.dataflow import VariableState
 from ethunter.analyzer.symbol_table import SymbolTable
 from ethunter.analyzer.helpers import find_enclosing_function, extract_field_path
+
+
+def _collect_macros(tree: ts.Tree) -> dict[str, str]:
+    """Collect preproc_def/preproc_function_def macros and their bodies.
+    Returns mapping: macro_name -> macro_body_text
+    """
+    macros: dict[str, str] = {}
+
+    def _scan(n: ts.Node) -> None:
+        if n.type in ('preproc_def', 'preproc_function_def'):
+            name_node = None
+            body_text = None
+            for child in n.children:
+                if child.type == 'identifier' and child.text:
+                    name_node = child
+                elif child.type == 'preproc_arg' and child.text:
+                    body_text = child.text.decode('utf-8')
+            if name_node and name_node.text and body_text:
+                macros[name_node.text.decode('utf-8')] = body_text
+        for child in n.children:
+            _scan(child)
+
+    _scan(tree.root_node)
+    return macros
+
+
+def _extract_field_path_from_macro_body(body: str) -> str | None:
+    """Extract struct_var.field pattern from macro body text.
+    e.g., 'streamer_hooks.read_tree(IB, DATA_IN)' -> 'streamer_hooks.read_tree'
+    """
+    match = re.search(r'(\w+)\s*(?:\.|->)\s*(\w+)', body)
+    if match:
+        return f'{match.group(1)}.{match.group(2)}'
+    return None
 
 
 def analyze(
@@ -27,6 +64,7 @@ def analyze(
     """Detect indirect calls through struct field expressions."""
     edges: list[CallEdge] = []
     symbol_names = symbol_table.all_function_names
+    macro_map = _collect_macros(tree)
 
     def _extract_field_expression(node: ts.Node | None) -> ts.Node | None:
         """Extract a field_expression, unwrapping parentheses and pointer expressions."""
@@ -145,6 +183,26 @@ def analyze(
                             indirect_kind='field_call',
                             caller_line=node.start_point[0] + 1,
                         ))
+            elif func_node.type == 'identifier' and func_node.text:
+                # Fallback: macro-expanded field call
+                call_name = func_node.text.decode('utf-8')
+                if call_name in macro_map:
+                    body = macro_map[call_name]
+                    resolved_path = _extract_field_path_from_macro_body(body)
+                    if resolved_path:
+                        targets = dataflow.resolve(f'<gstruct:{resolved_path}>')
+                        if targets:
+                            caller = find_enclosing_function(node, tree.root_node)
+                            for target in targets:
+                                edges.append(CallEdge(
+                                    caller=caller or '<unknown>',
+                                    callee=target,
+                                    caller_file=filepath,
+                                    callee_file='',
+                                    type=CallType.INDIRECT,
+                                    indirect_kind='field_call',
+                                    caller_line=node.start_point[0] + 1,
+                                ))
         for child in node.children:
             _visit(child)
 

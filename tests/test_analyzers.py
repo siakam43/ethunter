@@ -183,6 +183,27 @@ def test_field_call_subscript():
     assert 'handler_b' in callees
 
 
+def test_initializer_assign_pointer_field():
+    """Test vec->field = func pattern — runtime struct pointer field assignment."""
+    from ethunter.analyzer import initializer_assign, field_call
+    tree, st, df = _make_analyzer_env('initializer_assign_pointer_field.c')
+    initializer_assign.analyze(tree, 'initializer_assign_pointer_field.c', st, df)
+    # Verify dataflow targets
+    assert any('dispatch_table.process' in k for k in df.targets)
+    all_targets = set()
+    for targets in df.targets.values():
+        all_targets.update(targets)
+    assert 'handler_a' in all_targets
+    assert 'handler_b' in all_targets
+    # Verify field_call detects the indirect calls
+    edges = field_call.analyze(tree, 'initializer_assign_pointer_field.c', st, df)
+    callees = {e.callee for e in edges}
+    assert 'handler_a' in callees
+    assert 'handler_b' in callees
+    assert 'cleanup_a' in callees
+    assert 'cleanup_b' in callees
+
+
 def test_field_call_chain():
     from ethunter.analyzer import initializer_assign, field_call
     tree, st, df = _make_analyzer_env('field_call_complex.c')

@@ -205,6 +205,170 @@ def analyze(
                         if target:
                             dataflow.assign(f'<garray:{var_name}>', target)
 
+    def _collect_pointer_resolutions() -> dict[str, str]:
+        """Scan function bodies for ptr = &global_name[...] or ptr = &global_name patterns.
+        Returns mapping: local_var_name -> global_name
+        """
+        resolutions: dict[str, str] = {}
+
+        def _scan(n: ts.Node) -> None:
+            if n.type == 'assignment_expression':
+                lhs = n.child_by_field_name('left') or (n.children[0] if n.children else None)
+                rhs = n.child_by_field_name('right') or (n.children[-1] if n.children else None)
+                if lhs and rhs and lhs.type == 'identifier' and lhs.text:
+                    var_name = lhs.text.decode('utf-8')
+                    if rhs.type == 'pointer_expression' and rhs.children:
+                        inner = rhs.children[-1]
+                        if inner.type == 'identifier' and inner.text:
+                            resolutions[var_name] = inner.text.decode('utf-8')
+                        elif inner.type == 'subscript_expression' and inner.children:
+                            base = inner.children[0]
+                            if base.type == 'identifier' and base.text:
+                                resolutions[var_name] = base.text.decode('utf-8')
+            elif n.type == 'init_declarator':
+                declarator = n.child_by_field_name('declarator')
+                value = n.child_by_field_name('value')
+                if declarator and value and value.type == 'pointer_expression' and value.children:
+                    var_name = extract_identifier_from_declarator(declarator)
+                    if var_name:
+                        inner = value.children[-1]
+                        if inner.type == 'identifier' and inner.text:
+                            resolutions[var_name] = inner.text.decode('utf-8')
+                        elif inner.type == 'subscript_expression' and inner.children:
+                            base = inner.children[0]
+                            if base.type == 'identifier' and base.text:
+                                resolutions[var_name] = base.text.decode('utf-8')
+            for child in n.children:
+                _scan(child)
+
+        _scan(tree.root_node)
+        return resolutions
+
+    def _track_pointer_field_assignments(
+        tree: ts.Tree,
+        filepath: str,
+        dataflow: VariableState,
+        symbol_names: set[str],
+    ) -> None:
+        """Track vec->field = func assignments, resolving vec to global array name.
+
+        Handles two cases:
+        1. vec->field = literal_func (direct literal function name)
+        2. vec->field = param_func (parameter, needs call-site tracing)
+        """
+        resolutions = _collect_pointer_resolutions()
+
+        # Collect function parameters (func_name -> [param_names])
+        func_params: dict[str, list[str]] = {}
+
+        def _extract_param_id(node: ts.Node) -> str | None:
+            """Extract identifier from parameter_declaration."""
+            if node.type == 'identifier' and node.text:
+                return node.text.decode('utf-8')
+            for c in node.children:
+                if c.type in ('parenthesized_declarator', 'pointer_declarator',
+                              'array_declarator', 'function_declarator'):
+                    result = _extract_param_id(c)
+                    if result:
+                        return result
+                if c.type == 'identifier' and c.text:
+                    return c.text.decode('utf-8')
+            return None
+
+        def _collect_func_params(node: ts.Node) -> None:
+            if node.type == 'function_definition':
+                decl = None
+                for c in node.children:
+                    if c.type == 'function_declarator':
+                        decl = c
+                        break
+                    if c.type in ('pointer_declarator', 'parenthesized_declarator'):
+                        for cc in c.children:
+                            if cc.type == 'function_declarator':
+                                decl = cc
+                                break
+                if decl:
+                    func_name_node = None
+                    for c in decl.children:
+                        if c.type == 'identifier' and c.text:
+                            func_name_node = c
+                            break
+                    if func_name_node:
+                        fname = func_name_node.text.decode('utf-8')
+                        params = []
+                        plist = None
+                        for c in decl.children:
+                            if c.type == 'parameter_list':
+                                plist = c
+                                break
+                        if plist:
+                            for p in plist.children:
+                                if p.type == 'parameter_declaration':
+                                    pname = _extract_param_id(p)
+                                    if pname:
+                                        params.append(pname)
+                        func_params[fname] = params
+            for child in node.children:
+                _collect_func_params(child)
+
+        _collect_func_params(tree.root_node)
+
+        # Collect param mappings from call sites: param_name -> {actual_func, ...}
+        param_mappings: dict[str, set[str]] = {}
+
+        def _collect_call_params(node: ts.Node) -> None:
+            if node.type == 'call_expression':
+                func_node = node.child_by_field_name('function') or node.children[0]
+                if func_node and func_node.text:
+                    call_name = func_node.text.decode('utf-8')
+                    args = node.child_by_field_name('arguments')
+                    if args:
+                        param_names = func_params.get(call_name, [])
+                        arg_idx = 0
+                        for c in args.children:
+                            if c.type == '(' or c.type == ')' or c.type == ',':
+                                continue
+                            if c.type == 'identifier' and c.text:
+                                target = c.text.decode('utf-8')
+                                if target in symbol_names and arg_idx < len(param_names):
+                                    pname = param_names[arg_idx]
+                                    if pname not in param_mappings:
+                                        param_mappings[pname] = set()
+                                    param_mappings[pname].add(target)
+                                arg_idx += 1
+            for child in node.children:
+                _collect_call_params(child)
+
+        _collect_call_params(tree.root_node)
+
+        def _visit(n: ts.Node) -> None:
+            if n.type == 'assignment_expression':
+                lhs = n.child_by_field_name('left') or (n.children[0] if n.children else None)
+                rhs = n.child_by_field_name('right') or (n.children[-1] if n.children else None)
+                if lhs and lhs.type == 'field_expression' and rhs:
+                    var_name = None
+                    field_name = None
+                    for child in lhs.children:
+                        if child.type == 'identifier' and child.text:
+                            var_name = child.text.decode('utf-8')
+                        elif child.type == 'field_identifier' and child.text:
+                            field_name = child.text.decode('utf-8')
+
+                    if var_name and field_name and rhs.type == 'identifier' and rhs.text:
+                        raw_name = rhs.text.decode('utf-8')
+                        resolved = resolutions.get(var_name, var_name)
+                        # Check if RHS is a literal function name
+                        if raw_name in symbol_names:
+                            dataflow.assign(f'<gstruct:{resolved}.{field_name}>', raw_name)
+                        # Check if RHS is a parameter — resolve to actual functions
+                        elif raw_name in param_mappings:
+                            for t in param_mappings[raw_name]:
+                                dataflow.assign(f'<gstruct:{resolved}.{field_name}>', t)
+            for child in n.children:
+                _visit(child)
+
+        _visit(tree.root_node)
+
     def _visit(node: ts.Node) -> None:
         if node.type == 'init_declarator':
             declarator = node.child_by_field_name('declarator')
@@ -223,4 +387,8 @@ def analyze(
             _visit(child)
 
     _visit(tree.root_node)
+
+    # Pass 2: Track vec->field = func (runtime struct pointer field assignments)
+    _track_pointer_field_assignments(tree, filepath, dataflow, symbol_names)
+
     return edges
