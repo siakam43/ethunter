@@ -81,9 +81,6 @@ static int dsa_sign_setup(DSA *dsa, BN_CTX *ctx_in,
         if (!dsa->meth->bn_mod_exp(dsa, r, dsa->g, k, dsa->p, ctx,
                                        dsa->method_mont_p))
             goto err;
-    } else {
-        if (!BN_mod_exp_mont(r, dsa->g, k, dsa->p, ctx, dsa->method_mont_p))
-            goto err;
     }
     return 1;
 err:
@@ -211,4 +208,10 @@ int capi_init(ENGINE *e) {
         return 0;
     }
     return 1;
+}
+
+/* Binding: wire BN_mod_exp_mont as the bn_mod_exp target */
+void bind_dsa_methods(DSA_METHOD *dsam)
+{
+    DSA_meth_set_bn_mod_exp(dsam, BN_mod_exp_mont);
 }
