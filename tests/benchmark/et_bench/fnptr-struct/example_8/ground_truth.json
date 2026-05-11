@@ -2,7 +2,7 @@
   "examples": [
     {
       "caller": "EVP_PKEY_security_bits",
-      "callee": "NULL"
+      "callee": "rsa_pkey_security_bits"
     }
   ]
 }
