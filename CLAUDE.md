@@ -48,7 +48,7 @@ No linter is installed. Use `python -m pytest` from the `.venv` (Python 3.11) fo
 
 The CLI has two mutually exclusive modes:
 
-- **`--analyze DIR`**: Full analysis pipeline, outputs JSON only
+- **`--analyze DIR`**: Full analysis pipeline, outputs JSON only (default output: `callgraph.json`)
 - **`--from-json FILE`**: Load pre-generated JSON, then `--query`, `--to-dot`, or `--find-entry` (these three are mutually exclusive with each other and require `--from-json`)
 
 The `--format` parameter has been removed.
@@ -57,76 +57,110 @@ The `--format` parameter has been removed.
 
 ### 5-Phase Pipeline (`src/ethunter/cli.py`)
 
-1. **Scan** — recursively discover `.c`/`.h` files, excluding build directories and patterns in `.ethunterignore`
-2. **Parse** — build tree-sitter ASTs for each file
+1. **Scan** — recursively discover `.c`/`.h` files via `scanner.py`, excluding build directories and patterns in `.ethunterignore`
+2. **Parse** — build tree-sitter ASTs for each file via `ast_builder.py`
 3. **Symbol Table** — extract function definitions/declarations into a `SymbolTable`, initialize `VariableState` for dataflow tracking
-4. **Analyze** — run 12 analyzer modules + direct call analysis, merge into a single `CallGraph`
-5. **Output** — emit JSON, DOT, or a function-level query
+4. **Analyze** — run analyzer modules through the orchestrator, merge into a single `CallGraph`
+5. **Output** — emit JSON (analyze mode), or DOT/query/entry-points (from-json mode)
 
 ### Data Model (`src/ethunter/graph/model.py`)
 
 - **`CallType`** — `DIRECT` or `INDIRECT`
 - **`Function`** — name, file, line, signature, is_definition, return_type, parameters. Has `key` property: `"{file}:{name}:{line}"`
 - **`CallEdge`** — caller, callee, caller_file, callee_file, type, `indirect_kind`, caller_line
-- **`CallGraph`** — dict of `Function` by key, list of `CallEdge`, source_files. Provides `add_function()`, `add_edge()`, `query_callers()`, `query_callees()`
+- **`CallGraph`** — dict of `Function` by key, list of `CallEdge`, source_files. Provides `add_function()`, `add_edge()`, `query_callers()`, `query_callees()`, `from_dict()`, `to_dict()`
 
-### Analyzer Modules
+### Analyzer Modules (`src/ethunter/analyzer/orchestrator.py`)
 
-All analyzers (except `direct_call`) implement the standard interface:
+The orchestrator runs analyzers in a **two-phase pipeline** plus independent modules:
 
-```python
-def analyze(tree, filepath, symbol_table, dataflow) -> list[CallEdge]
-```
+**Phase 1: Target Resolution** — writes function pointer targets to `dataflow` (no edges returned):
+| Module | Detects |
+|---|---|
+| `direct_assign` | `fp = func` direct variable assignment |
+| `initializer_assign` | `void (*fp)(void) = func` declaration with initializer |
+| `cast_assign` | `(void (*)(void))func` cast-style assignment |
+| `param_assign` | `register_callback(func)` callback parameter passing |
 
-| Module | Detects | indirect_kind |
-|---|---|---|
-| `direct_call` | `foo()` style calls | (none, CallType.DIRECT) |
-| `fp_assign` | `fp = func` + `fp()` calls | `fp_assign` |
-| `callback_param` | functions passed as callback args | `callback_param` |
-| `fp_return` | functions returning function pointers | `fp_return` |
-| `fp_array` | function pointer arrays / dispatch tables | `fp_array` |
-| `vtable` | struct-based vtable indirection | `vtable` |
-| `callback_reg` | callback registration APIs | `callback_reg` |
-| `union_fp` | function pointers stored in unions | `union_fp` |
-| `typedef_fp` | calls through typedef'd function pointer types | `typedef_fp` |
-| `fp_alias` | `fp2 = fp1` alias chains | `fp_alias` |
-| `lazy_init` | lazily-initialized function pointers | `lazy_init` |
-| `macro_fp` | function pointer assignments inside macros | `macro_fp` |
-| `dlsym_fp` | `dlsym()`-based dynamic loading | `dlsym_fp` |
+**Phase 1b: Callback Detection** — param_assign callback patterns that return edges:
+| Module | Detects |
+|---|---|
+| `param_assign.analyze()` | Callback registration patterns (e.g., `signal(SIGINT, handler)`) |
+
+**Phase 2: Call Detection** — reads from `dataflow` to produce call edges:
+| Module | Detects |
+|---|---|
+| `direct_call_fp` | `fp()` calls where fp was resolved in Phase 1 |
+| `field_call` | `obj->func_ptr()` struct field function pointer calls |
+| `array_call` | `fp_array[i]()` function pointer array dispatch calls |
+
+**Independent modules** (don't depend on the two-phase pipeline):
+| Module | Detects |
+|---|---|
+| `direct_call` | `foo()` style direct calls (runs first, uses `symbol_names` set only) |
+| `dlsym_fp` | `dlsym()`-based dynamic loading patterns |
 
 ### Shared State
 
 - **`SymbolTable`** (`src/ethunter/analyzer/symbol_table.py`) — project-wide function name → `Function` list, typedef resolution, struct member tracking
 - **`VariableState`** (`src/ethunter/analyzer/dataflow.py`) — variable name → set of function targets, callback registry. Used by analyzers to track where function pointers flow across assignments and aliases.
 
-### Orchestrator (`src/ethunter/analyzer/orchestrator.py`)
+### Parser (`src/ethunter/parser/`)
 
-Runs `direct_call` first (uses symbol_names set), then all standard analyzers (use symbol_table + dataflow). Deduplicates edges at the end: same caller+callee pair produces one edge, preferring direct over indirect.
+- **`scanner.py`** — file discovery with `.ethunterignore` support, build directory exclusion
+- **`ast_builder.py`** — tree-sitter parsing of individual C files
+- **`preprocessor.py`** — C preprocessor integration
+
+### Query Engine (`src/ethunter/query/engine.py`)
+
+- **`query_callers(graph, func_name)`** — find all functions that call `func_name`
+- **`query_callees(graph, func_name)`** — find all functions called by `func_name`
+
+### Output (`src/ethunter/output/`)
+
+- **`json_output.py`** — serializes `CallGraph` to JSON with summary statistics
+- **`dot_output.py`** — converts `CallGraph` to Graphviz DOT format
 
 ### Directory Structure
 
 ```
 src/ethunter/
-  analyzer/       — 13 analysis modules + orchestrator + helpers.py
-    helpers.py    — shared AST utilities (find_enclosing_function, extract_identifier)
-    dataflow.py   — VariableState for variable → function target tracking
-    symbol_table.py — SymbolTable + extract_functions from tree-sitter AST
-    orchestrator.py — run_all_analyses, deduplication
-    __init__.py   — re-exports all analyzer modules
-  graph/          — CallGraph, CallEdge, Function, CallType
-  output/         — JSON and DOT serialization
-  parser/         — file scanning, tree-sitter parsing, #include tracking
-  query/          — caller/callee lookup on the graph
+  analyzer/           — analysis modules + orchestrator + helpers
+    helpers.py        — shared AST utilities (find_enclosing_function, extract_identifier)
+    dataflow.py       — VariableState for variable → function target tracking
+    symbol_table.py   — SymbolTable + extract_functions from tree-sitter AST
+    orchestrator.py   — run_all_analyses, two-phase pipeline + deduplication
+    direct_call.py    — direct call detection (foo())
+    direct_assign.py  — direct function pointer assignment (fp = func)
+    initializer_assign.py — declaration with initializer
+    cast_assign.py    — cast-style assignment
+    param_assign.py   — callback parameter passing
+    direct_call_fp.py  — indirect calls through resolved function pointers
+    field_call.py     — struct field function pointer calls
+    array_call.py     — function pointer array dispatch
+    dlsym_fp.py       — dlsym-based dynamic loading
+  graph/
+    model.py          — Function, CallEdge, CallType, CallGraph
+  output/
+    json_output.py    — JSON serialization
+    dot_output.py     — DOT/Graphviz serialization
+  parser/
+    scanner.py        — file discovery, .ethunterignore
+    ast_builder.py    — tree-sitter parsing
+    preprocessor.py   — preprocessor integration
+  query/
+    engine.py         — caller/callee lookup
+  cli.py              — CLI entry point, 5-phase pipeline orchestration
 
 tests/
-  fixtures/       — minimal C files (simple + _complex variants)
+  fixtures/           — minimal C files (simple + _complex variants)
   fixtures/cross_file/ — multi-file C fixtures per analyzer
-  benchmark/      — real C projects with ground_truth.json
-    cg_bench/     — CG-Bench benchmark suite
-  test_analyzers.py     — per-module unit tests
-  test_cross_file.py    — cross-file call detection tests
-  test_benchmark.py     — benchmark accuracy tests
-  test_cg_bench.py      — CG-Bench integration tests
-  test_query_json.py    — query and JSON round-trip tests
-  test_scanner.py       — file scanner tests
+  benchmark/          — real C projects with ground_truth.json
+    et_bench/         — ET-Bench benchmark suite (fnptr-callback, fnptr-cast, fnptr-dynamic-call, fnptr-global-array, fnptr-global-struct, fnptr-global-struct-array, fnptr-library, fnptr-only, fnptr-struct, fnptr-varargs, fnptr-virtual)
+  test_analyzers.py   — per-module unit tests
+  test_cross_file.py  — cross-file call detection tests
+  test_benchmark.py   — benchmark accuracy tests
+  test_et_bench.py    — ET-Bench integration tests
+  test_query_json.py  — query and JSON round-trip tests
+  test_scanner.py     — file scanner tests
 ```

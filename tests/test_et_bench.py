@@ -1,7 +1,6 @@
 """ET-Bench benchmark: evaluate ethunter's indirect call detection recall.
 
-Runs ethunter on each ET-Bench example fixture (syntax-clean rewritten CG-Bench
-fixtures) and compares detected indirect edges against per-example ground_truth.json.
+Runs ethunter on each ET-Bench example fixture and compares detected indirect edges against per-example ground_truth.json.
 Reports recall per category and overall.
 """
 
