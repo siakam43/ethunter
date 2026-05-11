@@ -123,3 +123,108 @@ def test_et_bench_report():
     print('-' * 67)
     print(f'{"OVERALL":<35} {total_matched:>10} {total_expected:>10} {overall_recall:>10.2%}')
     print()
+
+
+def _run_fixture(example_dir):
+    """Helper: run ethunter on a fixture directory and return graph."""
+    return _run_analysis_on_fixture(example_dir)
+
+
+def test_et_bench_fnptr_struct_example_2():
+    """cpp_pop_definition -> dump_queued_macros (two-pass field_call fix)."""
+    ex_dir = os.path.join(ET_BENCH_DIR, 'fnptr-struct', 'example_2')
+    graph = _run_fixture(ex_dir)
+    pairs = {(e.caller, e.callee) for e in graph.edges}
+    assert ('cpp_pop_definition', 'dump_queued_macros') in pairs
+
+
+def test_et_bench_fnptr_struct_example_13():
+    """CRYPTO_gcm128_encrypt -> aesni_encrypt (cast unwrap + param propagation)."""
+    ex_dir = os.path.join(ET_BENCH_DIR, 'fnptr-struct', 'example_13')
+    graph = _run_fixture(ex_dir)
+    pairs = {(e.caller, e.callee) for e in graph.edges}
+    assert ('CRYPTO_gcm128_encrypt', 'aesni_encrypt') in pairs
+
+
+def test_et_bench_fnptr_struct_example_12():
+    """s_server_main -> alpn_cb (param->field registration + call-site propagation)."""
+    ex_dir = os.path.join(ET_BENCH_DIR, 'fnptr-struct', 'example_12')
+    graph = _run_fixture(ex_dir)
+    pairs = {(e.caller, e.callee) for e in graph.edges}
+    assert ('s_server_main', 'alpn_cb') in pairs
+
+
+@pytest.mark.xfail(reason="example_9 return value tracking chain needs further investigation")
+def test_et_bench_fnptr_struct_example_9():
+    """security_callback_debug -> ssl_security_default_callback (return value tracking)."""
+    ex_dir = os.path.join(ET_BENCH_DIR, 'fnptr-struct', 'example_9')
+    graph = _run_fixture(ex_dir)
+    pairs = {(e.caller, e.callee) for e in graph.edges}
+    assert ('security_callback_debug', 'ssl_security_default_callback') in pairs
+
+
+@pytest.mark.xfail(reason="example_5 cast+param propagation needs further investigation")
+def test_et_bench_fnptr_struct_example_5():
+    """iterate_through_spacemap_logs_cb -> count_unflushed_space_cb et al (cast + param propagation)."""
+    ex_dir = os.path.join(ET_BENCH_DIR, 'fnptr-struct', 'example_5')
+    gt = _load_example_ground_truth(ex_dir)
+    expected_pairs = {(e['caller'], e['callee']) for e in gt}
+    graph = _run_fixture(ex_dir)
+    found_pairs = {(e.caller, e.callee) for e in graph.edges}
+    matched = found_pairs & expected_pairs
+    assert len(matched) == len(expected_pairs), f"Missing: {expected_pairs - matched}"
+
+
+@pytest.mark.xfail(reason="examples 5 and 9 still need fixes; recall at 71.43% currently")
+def test_et_bench_fnptr_struct_full_recall():
+    """fnptr-struct category should achieve 100% recall."""
+    cat_dir = os.path.join(ET_BENCH_DIR, 'fnptr-struct')
+    total_matched = 0
+    total_expected = 0
+    for example in sorted(os.listdir(cat_dir)):
+        if not example.startswith('example_'):
+            continue
+        example_dir = os.path.join(cat_dir, example)
+        expected = _load_example_ground_truth(example_dir)
+        if not expected:
+            continue
+        total_expected += len(expected)
+        graph = _run_analysis_on_fixture(example_dir)
+        indirect_edges = [e for e in graph.edges if e.type.value == 'indirect']
+        _, matched = compute_recall(indirect_edges, expected)
+        total_matched += len(matched)
+    recall = total_matched / total_expected if total_expected > 0 else 1.0
+    assert recall == 1.0, f"fnptr-struct recall is {recall:.2%}, expected 100%"
+
+
+def test_cross_file_param_registration():
+    """Verify Phase 1a: registration function in file A, call site in file B."""
+    import tree_sitter_c as tsc
+    from tree_sitter import Language, Parser
+
+    source_a = b'''
+void SSL_CTX_set_alpn_select_cb(void *ctx, void (*cb)(void)) {
+    ctx->ext.alpn_select_cb = cb;
+}
+'''
+    source_b = b'''
+void alpn_cb(void *ctx) {}
+void s_server_main(void) {
+    SSL_CTX_set_alpn_select_cb(ctx, alpn_cb);
+}
+'''
+    lang = Language(tsc.language())
+    parser = Parser(lang)
+    tree_a = parser.parse(source_a)
+    tree_b = parser.parse(source_b)
+
+    trees = {'file_a.c': tree_a, 'file_b.c': tree_b}
+    st = SymbolTable()
+    df = VariableState()
+    for fp in trees:
+        for func in extract_functions(trees[fp], fp):
+            st.add_function(func)
+
+    graph = run_all_analyses(trees, st, df)
+    pairs = {(e.caller, e.callee) for e in graph.edges}
+    assert ('s_server_main', 'alpn_cb') in pairs, f"Missing cross-file edge. Got: {pairs}"
