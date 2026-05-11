@@ -28,6 +28,21 @@ def analyze(
     edges: list[CallEdge] = []
     symbol_names = symbol_table.all_function_names
 
+    def _extract_field_expression(node: ts.Node | None) -> ts.Node | None:
+        """Extract a field_expression, unwrapping parentheses and pointer expressions."""
+        if not node:
+            return None
+        if node.type == 'field_expression':
+            return node
+        # (*ptr->field) → parenthesized_expression → pointer_expression → field_expression
+        if node.type == 'parenthesized_expression':
+            for c in node.children:
+                if c.type == 'pointer_expression':
+                    for cc in c.children:
+                        if cc.type == 'field_expression':
+                            return cc
+        return node if node.type == 'field_expression' else None
+
     def _visit(node: ts.Node) -> None:
         # Track field assignments: obj.field = func_name
         if node.type == 'assignment_expression':
@@ -42,9 +57,10 @@ def analyze(
 
         if node.type == 'call_expression':
             func_node = node.child_by_field_name('function') or node.children[0]
-            if func_node and func_node.type == 'field_expression':
+            field_expr = _extract_field_expression(func_node)
+            if field_expr:
                 caller = find_enclosing_function(node, tree.root_node)
-                field_path = extract_field_path(func_node)
+                field_path = extract_field_path(field_expr)
                 if field_path:
                     targets = set()
                     # Try <gstruct:path> first (from initializer_assign or this module)
@@ -58,7 +74,19 @@ def analyze(
                     # Fallback: global array initializer (e.g., <garray:global_hooks>)
                     if not targets:
                         base_name = field_path.split('.')[0]
-                        targets = dataflow.resolve(f'<garray:{base_name}>')
+                        garray_targets = dataflow.resolve(f'<garray:{base_name}>')
+                        if garray_targets:
+                            targets = garray_targets
+                            # Also merge struct-specific targets for the same base
+                            for key, vals in dataflow.targets.items():
+                                if key.startswith(f'<gstruct:{base_name}.') and vals:
+                                    targets.update(vals)
+                    elif '.' in field_path:
+                        # Also merge <garray:base> targets when field-name match exists
+                        base_name = field_path.split('.')[0]
+                        garray_targets = dataflow.resolve(f'<garray:{base_name}>')
+                        if garray_targets:
+                            targets.update(garray_targets)
                     # Fallback: resolve struct alias (e.g., Curl_ssl -> Curl_ssl_openssl)
                     if not targets and '.' in field_path:
                         parts = field_path.split('.')
@@ -93,7 +121,13 @@ def analyze(
                     # Fallback: try last component alone
                     if not targets:
                         last_part = field_path.split('.')[-1]
+                        # Try <struct:field> and <gstruct:var.field> for any var
                         targets = dataflow.resolve(last_part)
+                        if not targets:
+                            # Scan for keys ending with .{last_part}> in dataflow
+                            for key, vals in dataflow.targets.items():
+                                if key.endswith(f'.{last_part}>') and vals:
+                                    targets.update(vals)
                     # Fallback: try <vtable:path> (old key format)
                     if not targets:
                         targets = dataflow.resolve(f'<vtable:{field_path}>')

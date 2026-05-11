@@ -16,6 +16,10 @@ def find_enclosing_function(node: ts.Node, root: ts.Node) -> str | None:
             return
         if n.type == 'function_definition':
             decl = find_child(n, 'function_declarator')
+            if not decl:
+                pd = find_child(n, 'pointer_declarator')
+                if pd:
+                    decl = find_child(pd, 'function_declarator')
             if decl:
                 ident = find_child(decl, 'identifier')
                 if ident and ident.text:
