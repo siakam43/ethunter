@@ -265,3 +265,43 @@ def test_call_graph_dedup():
     graph.source_files = [os.path.join(FIXTURES, f) for f in files]
     pairs = [(e.caller, e.callee) for e in graph.edges]
     assert len(pairs) == len(set(pairs)), f'Duplicate edges: {pairs}'
+
+
+# === Local Function Pointer Tracker tests ===
+
+def test_local_fp_tracker_pointer_field_assignment():
+    """Test: local = struct.field init_declarator resolves to function targets."""
+    from ethunter.analyzer import initializer_assign, local_fp_tracker
+    tree, st, df = _make_analyzer_env('local_fp_assign.c')
+    initializer_assign.analyze(tree, 'local_fp_assign.c', st, df)
+    mapping = local_fp_tracker.collect_local_fp_assignments(
+        tree, df, st.all_function_names
+    )
+    assert 'fn' in mapping
+    assert 'double_it' in mapping['fn']
+
+
+def test_local_fp_tracker_deref_call():
+    """Test: (*local)() call detection through direct_call_fp."""
+    from ethunter.analyzer import initializer_assign, direct_call_fp
+    tree, st, df = _make_analyzer_env('local_fp_deref_call.c')
+    initializer_assign.analyze(tree, 'local_fp_deref_call.c', st, df)
+    edges = direct_call_fp.analyze(tree, 'local_fp_deref_call.c', st, df)
+    callees = {e.callee for e in edges}
+    assert 'default_process' in callees
+
+
+def test_local_fp_tracker_assignment_expression():
+    """Test: both init_declarator and assignment_expression patterns."""
+    from ethunter.analyzer import initializer_assign, local_fp_tracker
+    tree, st, df = _make_analyzer_env('local_fp_assign.c')
+    initializer_assign.analyze(tree, 'local_fp_assign.c', st, df)
+    mapping = local_fp_tracker.collect_local_fp_assignments(
+        tree, df, st.all_function_names
+    )
+    # init_declarator pattern: fn = global_ops.compute
+    assert 'fn' in mapping
+    assert 'double_it' in mapping['fn']
+    # assignment_expression pattern: fn2 = global_ops.compute
+    assert 'fn2' in mapping
+    assert 'double_it' in mapping['fn2']
