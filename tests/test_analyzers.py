@@ -1,4 +1,4 @@
-"""Comprehensive tests for all analyzer modules."""
+"""Tests for all analyzer modules (new architecture)."""
 
 import os
 import pytest
@@ -22,6 +22,8 @@ def _make_analyzer_env(fixture_name):
     return tree, st, df
 
 
+# === Core tests ===
+
 def test_direct_call_simple():
     tree, st, _ = _make_analyzer_env('direct_call.c')
     edges = direct_analyze(tree, 'direct_call.c', st.all_function_names)
@@ -31,106 +33,172 @@ def test_direct_call_simple():
     assert ('main', 'helper') in edge_pairs
 
 
-def test_fp_assign():
-    from ethunter.analyzer import fp_assign
+def test_direct_call_complex():
+    tree, st, _ = _make_analyzer_env('direct_call_complex.c')
+    edges = direct_analyze(tree, 'direct_call_complex.c', st.all_function_names)
+    callees_of_top = {e.callee for e in edges if e.caller == 'top'}
+    assert callees_of_top >= {'middle_two', 'leaf_a', 'leaf_b'}
+    callees_of_middle_one = {e.callee for e in edges if e.caller == 'middle_one'}
+    assert callees_of_middle_one >= {'leaf_a', 'leaf_b'}
+
+
+# === Target Resolution tests ===
+
+def test_direct_assign_simple():
+    from ethunter.analyzer import direct_assign
     tree, st, df = _make_analyzer_env('fp_assign.c')
-    edges = fp_assign.analyze(tree, 'fp_assign.c', st, df)
-    callee_names = {e.callee for e in edges}
-    assert callee_names, 'fp_assign should find at least one indirect call'
+    direct_assign.analyze(tree, 'fp_assign.c', st, df)
+    assert len(df.targets) > 0
+    assert 'fp' in df.targets
 
 
-def test_callback_param():
-    from ethunter.analyzer import callback_param
-    tree, st, df = _make_analyzer_env('callback_param.c')
-    edges = callback_param.analyze(tree, 'callback_param.c', st, df)
-    # Should find my_handler being passed as callback
-    assert any(e.callee == 'my_handler' for e in edges), f'Expected my_handler in edges: {[e.callee for e in edges]}'
+def test_direct_assign_alias_chain():
+    from ethunter.analyzer import direct_assign
+    tree, st, df = _make_analyzer_env('long_alias_chain.c')
+    direct_assign.analyze(tree, 'long_alias_chain.c', st, df)
+    assert 'fp1' in df.targets
+    assert 'target_func' in df.targets['fp1']
+    assert 'fp4' in df.targets
+    assert 'target_func' in df.targets.get('fp4', set())
 
 
-def test_fp_return():
-    from ethunter.analyzer import fp_return
-    tree, st, df = _make_analyzer_env('fp_return.c')
-    edges = fp_return.analyze(tree, 'fp_return.c', st, df)
-    # Should detect get_handler being called
-    assert any('handler' in e.callee.lower() for e in edges), f'Expected handler call: {[e.callee for e in edges]}'
+def test_direct_assign_complex():
+    from ethunter.analyzer import direct_assign
+    tree, st, df = _make_analyzer_env('fp_assign_complex.c')
+    direct_assign.analyze(tree, 'fp_assign_complex.c', st, df)
+    assert len(df.targets) >= 2
 
 
-def test_fp_array():
-    from ethunter.analyzer import fp_array
+def test_initializer_assign_simple():
+    from ethunter.analyzer import initializer_assign
+    tree, st, df = _make_analyzer_env('initializer_assign.c')
+    initializer_assign.analyze(tree, 'initializer_assign.c', st, df)
+    assert any(k.startswith('<gstruct:') for k in df.targets)
+    all_targets = set()
+    for targets in df.targets.values():
+        all_targets.update(targets)
+    assert 'fs_init' in all_targets
+    assert 'fs_read' in all_targets
+
+
+def test_initializer_assign_complex():
+    from ethunter.analyzer import initializer_assign
+    tree, st, df = _make_analyzer_env('initializer_assign_complex.c')
+    initializer_assign.analyze(tree, 'initializer_assign_complex.c', st, df)
+    all_targets = set()
+    for targets in df.targets.values():
+        all_targets.update(targets)
+    assert len(all_targets) >= 4
+    assert 'start_a' in all_targets and 'start_b' in all_targets
+
+
+def test_cast_assign_simple():
+    from ethunter.analyzer import cast_assign
+    tree, st, df = _make_analyzer_env('cast_assign.c')
+    cast_assign.analyze(tree, 'cast_assign.c', st, df)
+    assert 'fp_update' in df.targets
+    assert 'update_impl' in df.targets.get('fp_update', set())
+
+
+def test_cast_assign_complex():
+    from ethunter.analyzer import cast_assign
+    tree, st, df = _make_analyzer_env('cast_assign_complex.c')
+    cast_assign.analyze(tree, 'cast_assign_complex.c', st, df)
+    assert 'g_init' in df.targets
+    assert 'my_md5_init' in df.targets.get('g_init', set())
+
+
+def test_param_assign_simple():
+    from ethunter.analyzer import param_assign
+    tree, st, df = _make_analyzer_env('param_assign.c')
+    edges = param_assign.analyze(tree, 'param_assign.c', st, df)
+    assert len(df.targets) > 0
+    assert any(k.startswith('<struct:') for k in df.targets)
+
+
+def test_param_assign_complex():
+    from ethunter.analyzer import param_assign
+    tree, st, df = _make_analyzer_env('param_assign_complex.c')
+    edges = param_assign.analyze(tree, 'param_assign_complex.c', st, df)
+    callees = {e.callee for e in edges}
+    assert 'on_start' in callees or 'on_stop' in callees
+
+
+# === Call Detection tests ===
+
+def test_direct_call_fp():
+    from ethunter.analyzer import direct_assign, direct_call_fp
+    tree, st, df = _make_analyzer_env('fp_assign.c')
+    direct_assign.analyze(tree, 'fp_assign.c', st, df)
+    edges = direct_call_fp.analyze(tree, 'fp_assign.c', st, df)
+    callees = {e.callee for e in edges}
+    assert 'foo' in callees
+
+
+def test_direct_call_fp_alias_chain():
+    from ethunter.analyzer import direct_assign, direct_call_fp
+    tree, st, df = _make_analyzer_env('long_alias_chain.c')
+    direct_assign.analyze(tree, 'long_alias_chain.c', st, df)
+    edges = direct_call_fp.analyze(tree, 'long_alias_chain.c', st, df)
+    callees = {e.callee for e in edges}
+    assert 'target_func' in callees
+
+
+def test_array_call():
+    from ethunter.analyzer import initializer_assign, array_call
     tree, st, df = _make_analyzer_env('fp_array.c')
-    edges = fp_array.analyze(tree, 'fp_array.c', st, df)
-    # Should find at least one indirect edge from dispatch table
-    assert any(e.type.value == 'indirect' and e.indirect_kind == 'fp_array' for e in edges) or \
-           any(e.type.value == 'indirect' for e in edges), f'Expected indirect edge: {[e.to_dict() for e in edges]}'
+    initializer_assign.analyze(tree, 'fp_array.c', st, df)
+    edges = array_call.analyze(tree, 'fp_array.c', st, df)
+    callees = {e.callee for e in edges}
+    assert 'cmd_help' in callees
 
 
-def test_vtable():
-    from ethunter.analyzer import vtable
-    tree, st, df = _make_analyzer_env('vtable.c')
-    edges = vtable.analyze(tree, 'vtable.c', st, df)
-    # Should find at least one indirect edge
-    assert any(e.type.value == 'indirect' for e in edges), f'Expected indirect edge: {[e.to_dict() for e in edges]}'
+def test_array_call_complex():
+    from ethunter.analyzer import initializer_assign, array_call
+    tree, st, df = _make_analyzer_env('fp_array_complex.c')
+    initializer_assign.analyze(tree, 'fp_array_complex.c', st, df)
+    edges = array_call.analyze(tree, 'fp_array_complex.c', st, df)
+    callees = {e.callee for e in edges}
+    assert any('cmd' in c.lower() for c in callees)
 
 
-def test_callback_reg():
-    from ethunter.analyzer import callback_reg
-    tree, st, df = _make_analyzer_env('callback_reg.c')
-    edges = callback_reg.analyze(tree, 'callback_reg.c', st, df)
-    # Should detect registered callbacks
-    callee_names = {e.callee for e in edges}
-    assert 'on_start' in callee_names or 'on_stop' in callee_names, f'Expected registered callbacks: {callee_names}'
+def test_field_call_simple():
+    from ethunter.analyzer import initializer_assign, field_call
+    tree, st, df = _make_analyzer_env('field_call.c')
+    initializer_assign.analyze(tree, 'field_call.c', st, df)
+    edges = field_call.analyze(tree, 'field_call.c', st, df)
+    callees = {e.callee for e in edges}
+    assert 'fs_init' in callees
+    assert 'fs_read' in callees
 
 
-def test_union_fp():
-    from ethunter.analyzer import union_fp
-    tree, st, df = _make_analyzer_env('union_fp.c')
-    edges = union_fp.analyze(tree, 'union_fp.c', st, df)
-    # Should find at least one indirect edge
-    assert any(e.type.value == 'indirect' for e in edges), f'Expected indirect edge: {[e.to_dict() for e in edges]}'
-
-
-def test_typedef_fp():
-    from ethunter.analyzer import typedef_fp
-    tree, st, df = _make_analyzer_env('typedef_fp.c')
-    edges = typedef_fp.analyze(tree, 'typedef_fp.c', st, df)
-    # Should find indirect calls to do_action or undo_action
-    callee_names = {e.callee for e in edges}
-    assert 'do_action' in callee_names or 'undo_action' in callee_names, f'Edges: {[e.to_dict() for e in edges]}'
-
-
-def test_fp_alias():
-    from ethunter.analyzer import fp_alias
-    tree, st, df = _make_analyzer_env('fp_alias.c')
-    edges = fp_alias.analyze(tree, 'fp_alias.c', st, df)
-    # Should find indirect call to target_a
-    callee_names = {e.callee for e in edges}
-    assert 'target_a' in callee_names, f'Expected target_a: {[e.to_dict() for e in edges]}'
-
-
-def test_lazy_init():
-    from ethunter.analyzer import lazy_init
-    tree, st, df = _make_analyzer_env('lazy_init.c')
-    edges = lazy_init.analyze(tree, 'lazy_init.c', st, df)
-    # Should find at least one indirect edge
-    assert any(e.type.value == 'indirect' for e in edges), f'Expected indirect edge: {[e.to_dict() for e in edges]}'
-
-
-def test_macro_fp():
-    from ethunter.analyzer import macro_fp
-    tree, st, df = _make_analyzer_env('macro_fp.c')
-    edges = macro_fp.analyze(tree, 'macro_fp.c', st, df)
-    # Should find at least one indirect edge from macro
-    callee_names = {e.callee for e in edges}
-    assert 'handler_a' in callee_names or 'handler_b' in callee_names, f'Expected macro edges: {callee_names}'
+def test_field_call_chain():
+    from ethunter.analyzer import initializer_assign, field_call
+    tree, st, df = _make_analyzer_env('field_call_complex.c')
+    initializer_assign.analyze(tree, 'field_call_complex.c', st, df)
+    edges = field_call.analyze(tree, 'field_call_complex.c', st, df)
+    callees = {e.callee for e in edges}
+    assert 'net_read' in callees
+    assert 'net_write' in callees
 
 
 def test_dlsym_fp():
     from ethunter.analyzer import dlsym_fp
     tree, st, df = _make_analyzer_env('dlsym_fp.c')
     edges = dlsym_fp.analyze(tree, 'dlsym_fp.c', st, df)
-    callee_names = {e.callee for e in edges}
-    assert 'plugin_init' in callee_names, f'Expected plugin_init in dlsym edges: {callee_names}'
+    callees = {e.callee for e in edges}
+    assert 'plugin_init' in callees
 
+
+def test_dlsym_fp_complex():
+    from ethunter.analyzer import dlsym_fp
+    tree, st, df = _make_analyzer_env('dlsym_fp_complex.c')
+    edges = dlsym_fp.analyze(tree, 'dlsym_fp_complex.c', st, df)
+    callees = {e.callee for e in edges}
+    assert 'plugin_start' in callees
+
+
+# === Integration tests ===
 
 def test_symbol_table_extraction():
     tree, st, _ = _make_analyzer_env('direct_call.c')
@@ -164,135 +232,4 @@ def test_call_graph_dedup():
     graph = run_all_analyses(trees, st, df)
     graph.source_files = [os.path.join(FIXTURES, f) for f in files]
     pairs = [(e.caller, e.callee) for e in graph.edges]
-    assert len(pairs) == len(set(pairs)), f'Duplicate edges found: {pairs}'
-
-
-# --- Complex scenario tests ---
-
-def test_direct_call_complex():
-    tree, st, _ = _make_analyzer_env('direct_call_complex.c')
-    edges = direct_analyze(tree, 'direct_call_complex.c', st.all_function_names)
-    callees_of_top = {e.callee for e in edges if e.caller == 'top'}
-    assert callees_of_top >= {'middle_two', 'leaf_a', 'leaf_b'}
-    callees_of_middle_one = {e.callee for e in edges if e.caller == 'middle_one'}
-    assert callees_of_middle_one >= {'leaf_a', 'leaf_b'}
-
-
-def test_fp_assign_complex():
-    from ethunter.analyzer import fp_assign
-    tree, st, df = _make_analyzer_env('fp_assign_complex.c')
-    edges = fp_assign.analyze(tree, 'fp_assign_complex.c', st, df)
-    callees = {e.callee for e in edges}
-    assert len(callees) >= 2, f'Expected multiple fp targets: {callees}'
-
-
-def test_callback_param_complex():
-    from ethunter.analyzer import callback_param
-    tree, st, df = _make_analyzer_env('callback_param_complex.c')
-    edges = callback_param.analyze(tree, 'callback_param_complex.c', st, df)
-    callees = {e.callee for e in edges}
-    assert 'inner_handler' in callees or 'outer_handler' in callees, f'Expected callbacks: {callees}'
-
-
-def test_fp_return_complex():
-    from ethunter.analyzer import fp_return
-    tree, st, df = _make_analyzer_env('fp_return_complex.c')
-    edges = fp_return.analyze(tree, 'fp_return_complex.c', st, df)
-    callees = {e.callee for e in edges}
-    assert any('action' in c.lower() for c in callees), f'Expected action targets: {callees}'
-
-
-def test_fp_array_complex():
-    from ethunter.analyzer import fp_array
-    tree, st, df = _make_analyzer_env('fp_array_complex.c')
-    edges = fp_array.analyze(tree, 'fp_array_complex.c', st, df)
-    callees = {e.callee for e in edges}
-    assert any('cmd' in c.lower() for c in callees), f'Expected cmd targets: {callees}'
-
-
-def test_vtable_complex():
-    from ethunter.analyzer import vtable
-    tree, st, df = _make_analyzer_env('vtable_complex.c')
-    edges = vtable.analyze(tree, 'vtable_complex.c', st, df)
-    callees = {e.callee for e in edges}
-    assert any('open' in c.lower() or 'close' in c.lower() for c in callees), f'Expected vtable targets: {callees}'
-
-
-def test_callback_reg_complex():
-    from ethunter.analyzer import callback_reg
-    tree, st, df = _make_analyzer_env('callback_reg_complex.c')
-    edges = callback_reg.analyze(tree, 'callback_reg_complex.c', st, df)
-    callees = {e.callee for e in edges}
-    assert 'on_connect' in callees or 'on_disconnect' in callees, f'Expected registered callbacks: {callees}'
-
-
-def test_union_fp_complex():
-    from ethunter.analyzer import union_fp
-    tree, st, df = _make_analyzer_env('union_fp_complex.c')
-    edges = union_fp.analyze(tree, 'union_fp_complex.c', st, df)
-    callees = {e.callee for e in edges}
-    assert len(callees) >= 1, f'Expected union fp targets: {callees}'
-
-
-def test_typedef_fp_complex():
-    from ethunter.analyzer import typedef_fp
-    tree, st, df = _make_analyzer_env('typedef_fp_complex.c')
-    edges = typedef_fp.analyze(tree, 'typedef_fp_complex.c', st, df)
-    callees = {e.callee for e in edges}
-    assert 'handle_request' in callees or 'handle_response' in callees or len(edges) >= 0
-
-
-def test_fp_alias_complex():
-    from ethunter.analyzer import fp_alias
-    tree, st, df = _make_analyzer_env('fp_alias_complex.c')
-    edges = fp_alias.analyze(tree, 'fp_alias_complex.c', st, df)
-    callees = {e.callee for e in edges}
-    assert len(callees) >= 1, f'Expected alias targets: {callees}'
-
-
-def test_lazy_init_complex():
-    from ethunter.analyzer import lazy_init
-    tree, st, df = _make_analyzer_env('lazy_init_complex.c')
-    edges = lazy_init.analyze(tree, 'lazy_init_complex.c', st, df)
-    callees = {e.callee for e in edges}
-    assert len(callees) >= 1, f'Expected lazy init targets: {callees}'
-
-
-def test_macro_fp_complex():
-    from ethunter.analyzer import macro_fp
-    tree, st, df = _make_analyzer_env('macro_fp_complex.c')
-    edges = macro_fp.analyze(tree, 'macro_fp_complex.c', st, df)
-    callees = {e.callee for e in edges}
-    assert 'handler_x' in callees or 'handler_y' in callees, f'Expected macro edges: {callees}'
-
-
-def test_dlsym_fp_complex():
-    from ethunter.analyzer import dlsym_fp
-    tree, st, df = _make_analyzer_env('dlsym_fp_complex.c')
-    edges = dlsym_fp.analyze(tree, 'dlsym_fp_complex.c', st, df)
-    callees = {e.callee for e in edges}
-    assert 'plugin_start' in callees, f'Expected dlsym edges: {callees}'
-
-
-# --- Edge case tests ---
-
-def test_long_alias_chain():
-    from ethunter.analyzer import fp_assign, fp_alias
-    tree, st, df = _make_analyzer_env('long_alias_chain.c')
-    edges = []
-    edges.extend(fp_assign.analyze(tree, 'long_alias_chain.c', st, df))
-    edges.extend(fp_alias.analyze(tree, 'long_alias_chain.c', st, df))
-    callees = {e.callee for e in edges}
-    assert 'target_func' in callees, f'Expected target_func in alias chain: {[e.to_dict() for e in edges]}'
-
-
-def test_macro_collision():
-    """Macro substring collision: macro body contains 'close' but shouldn't match close_file."""
-    from ethunter.analyzer import macro_fp
-    tree, st, df = _make_analyzer_env('macro_collision.c')
-    edges = macro_fp.analyze(tree, 'macro_collision.c', st, df)
-    callees = {e.callee for e in edges}
-    # HANDLE_CLOSE macro body is '((x) + 1)' — contains no function names
-    # So macro_fp should NOT emit edges for close_file or open_session via HANDLE_CLOSE
-    assert 'close_file' not in callees, f'Macro collision: close_file should not match HANDLE_CLOSE: {[e.to_dict() for e in edges]}'
-    assert 'open_session' not in callees, f'Macro collision: open_session should not match HANDLE_CLOSE'
+    assert len(pairs) == len(set(pairs)), f'Duplicate edges: {pairs}'

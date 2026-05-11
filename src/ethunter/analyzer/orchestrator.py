@@ -9,34 +9,31 @@ from ethunter.analyzer.dataflow import VariableState
 from ethunter.analyzer.symbol_table import SymbolTable
 from ethunter.analyzer import (
     direct_call,
-    fp_assign,
-    callback_param,
-    fp_return,
-    fp_array,
-    vtable,
-    callback_reg,
-    union_fp,
-    typedef_fp,
-    fp_alias,
-    lazy_init,
-    macro_fp,
     dlsym_fp,
 )
+from ethunter.analyzer import (
+    direct_assign,
+    initializer_assign,
+    cast_assign,
+    param_assign,
+)
+from ethunter.analyzer import (
+    direct_call_fp,
+    field_call,
+    array_call,
+)
 
-# Analyzers that use the standard interface (symbol_table + dataflow)
-STANDARD_ANALYZERS = [
-    fp_assign,
-    callback_param,
-    fp_return,
-    fp_array,
-    vtable,
-    callback_reg,
-    union_fp,
-    typedef_fp,
-    fp_alias,
-    lazy_init,
-    macro_fp,
-    dlsym_fp,
+TARGET_RESOLVERS = [
+    direct_assign,
+    initializer_assign,
+    cast_assign,
+    param_assign,
+]
+
+CALL_DETECTORS = [
+    direct_call_fp,
+    field_call,
+    array_call,
 ]
 
 
@@ -54,16 +51,37 @@ def run_all_analyses(
         for f in symbol_table.lookup(func_name):
             graph.add_function(f)
 
-    # Direct call analyzer uses symbol_names (set) not symbol_table
+    # Direct call analyzer
     for filepath, tree in trees.items():
         edges = direct_call.analyze(tree, filepath, symbol_names)
         for edge in edges:
             graph.add_edge(edge)
 
-    # All other analyzers use the standard interface
+    # Phase 1: Target resolution (writes to dataflow)
     for filepath, tree in trees.items():
-        for analyzer in STANDARD_ANALYZERS:
-            edges = analyzer.analyze(
+        for resolver in TARGET_RESOLVERS:
+            resolver.analyze(
+                tree=tree,
+                filepath=filepath,
+                symbol_table=symbol_table,
+                dataflow=dataflow,
+            )
+
+    # Phase 1b: param_assign callback detection (returns edges for registration patterns)
+    for filepath, tree in trees.items():
+        edges = param_assign.analyze(
+            tree=tree,
+            filepath=filepath,
+            symbol_table=symbol_table,
+            dataflow=dataflow,
+        )
+        for edge in edges:
+            graph.add_edge(edge)
+
+    # Phase 2: Call detection (reads from dataflow)
+    for filepath, tree in trees.items():
+        for detector in CALL_DETECTORS:
+            edges = detector.analyze(
                 tree=tree,
                 filepath=filepath,
                 symbol_table=symbol_table,
@@ -72,14 +90,24 @@ def run_all_analyses(
             for edge in edges:
                 graph.add_edge(edge)
 
-    # Deduplicate edges: same caller+callee = one edge, prefer direct over indirect
+    # dlsym_fp (independent)
+    for filepath, tree in trees.items():
+        edges = dlsym_fp.analyze(
+            tree=tree,
+            filepath=filepath,
+            symbol_table=symbol_table,
+            dataflow=dataflow,
+        )
+        for edge in edges:
+            graph.add_edge(edge)
+
+    # Deduplicate: same caller+callee = one edge, prefer direct over indirect
     edge_map: dict[tuple[str, str], dict] = {}
     for edge in graph.edges:
         key = (edge.caller, edge.callee)
         if key not in edge_map:
             edge_map[key] = edge.to_dict()
         else:
-            # If existing is indirect and new is direct, replace
             existing = edge_map[key]
             if existing.get('type') == 'indirect' and edge.type == CallType.DIRECT:
                 edge_map[key] = edge.to_dict()
