@@ -81,8 +81,9 @@ def analyze(
                             return cc
         return node if node.type == 'field_expression' else None
 
-    def _visit(node: ts.Node) -> None:
-        # Track field assignments: obj.field = func_name
+    # Pass 1: collect all field assignments across the entire file
+    def _collect_assignments(node: ts.Node) -> None:
+        """Collect field = func_name assignments (extracted from the old _visit block)."""
         if node.type == 'assignment_expression':
             lhs = node.child_by_field_name('left') or node.children[0]
             rhs = node.child_by_field_name('right') or node.children[1]
@@ -92,7 +93,13 @@ def analyze(
                     field_path = extract_field_path(lhs)
                     if field_path:
                         dataflow.assign(f'<gstruct:{field_path}>', target)
+        for child in node.children:
+            _collect_assignments(child)
 
+    _collect_assignments(tree.root_node)
+
+    # Pass 2: detect call sites (existing logic, minus the assignment block)
+    def _visit(node: ts.Node) -> None:
         if node.type == 'call_expression':
             func_node = node.child_by_field_name('function') or node.children[0]
             field_expr = _extract_field_expression(func_node)

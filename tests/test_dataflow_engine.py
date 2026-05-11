@@ -4,6 +4,7 @@ import pytest
 import tree_sitter_c as tsc
 from tree_sitter import Language, Parser
 from ethunter.analyzer.dataflow import VariableState, DataflowEngine
+from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
 
 
 def _find_node(node, target_type):
@@ -131,6 +132,39 @@ class TestDataflowEngineCastResolver:
         """Non-cast node -> None."""
         result = self.engine.unwrap_cast(type('FakeNode', (), {'type': 'binary_expression'})())
         assert result is None
+
+
+class TestFieldCallTwoPass:
+    """field_call two-pass: assignments collected before call detection."""
+
+    def test_assignment_after_call_still_detected(self):
+        """When field assignment appears after call site in source, edge is still found."""
+        from ethunter.analyzer import field_call
+
+        lang = Language(tsc.language())
+        parser = Parser(lang)
+
+        # Call site BEFORE assignment in source order
+        source = b'''
+void handler(void) {}
+void caller(void) {
+    obj.cb();
+}
+void init(void) {
+    obj.cb = handler;
+}
+'''
+        tree = parser.parse(source)
+
+        st = SymbolTable()
+        for func in extract_functions(tree, 'test.c'):
+            st.add_function(func)
+
+        df = DataflowEngine()
+        edges = field_call.analyze(tree, 'test.c', st, df)
+
+        callers_callees = {(e.caller, e.callee) for e in edges}
+        assert ('caller', 'handler') in callers_callees
 
 
 class TestHasattrDowngrade:
