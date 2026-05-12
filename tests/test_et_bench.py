@@ -225,3 +225,99 @@ void s_server_main(void) {
     graph = run_all_analyses(trees, st, df)
     pairs = {(e.caller, e.callee) for e in graph.edges}
     assert ('s_server_main', 'alpn_cb') in pairs, f"Missing cross-file edge. Got: {pairs}"
+
+
+def test_bug0_positional_index_correctness():
+    """Bug 0: string/number/null values in positional initializers must increment index."""
+    import tree_sitter_c as tsc
+    from tree_sitter import Language, Parser
+
+    source = b'''
+    typedef struct ops {
+        const char *name;
+        void (*init)(void);
+        int (*cleanup)(void);
+        void *extra;
+    } ops_t;
+
+    static void my_init(void) {}
+    static int my_cleanup(void) { return 0; }
+
+    static const ops_t my_ops = {
+        "myops",
+        my_init,
+        my_cleanup,
+        NULL,
+    };
+    '''
+    lang = Language(tsc.language())
+    parser = Parser(lang)
+    tree = parser.parse(source)
+
+    from ethunter.analyzer.initializer_assign import analyze as init_analyze
+    from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
+    from ethunter.analyzer.dataflow import VariableState
+
+    st = SymbolTable()
+    for func in extract_functions(tree, "test.c"):
+        st.add_function(func)
+    df = VariableState()
+
+    init_analyze(tree=tree, filepath="test.c", symbol_table=st, dataflow=df)
+
+    # After fix: index 0 ("myops", string) increments index; index 1 gets my_init -> field "init"
+    assert 'my_init' in df.resolve('<gstruct:my_ops.init>'), \
+        f"Expected my_init in .init, got: {df.resolve('<gstruct:my_ops.init>')}"
+    # index 2 gets my_cleanup -> field "cleanup"
+    assert 'my_cleanup' in df.resolve('<gstruct:my_ops.cleanup>'), \
+        f"Expected my_cleanup in .cleanup, got: {df.resolve('<gstruct:my_ops.cleanup>')}"
+    # NULL at index 3 should be skipped for function target storage
+    assert not df.resolve('<gstruct:my_ops.extra>'), \
+        f"Expected empty .extra, got: {df.resolve('<gstruct:my_ops.extra>')}"
+
+
+def test_bug0_array_of_structs_with_inner_init_list():
+    """Bug 0 extended: inner initializer_list in array-of-structs needs index tracking + field mapping."""
+    import tree_sitter_c as tsc
+    from tree_sitter import Language, Parser
+
+    source = b'''
+    typedef int (*fn_t)(void);
+
+    struct item {
+        const char *label;
+        int priority;
+        fn_t handler;
+    };
+
+    static int do_a(void) { return 0; }
+    static int do_b(void) { return 0; }
+
+    static const struct item table[] = {
+        {"alpha", 1, do_a},
+        {"beta",  2, do_b},
+    };
+    '''
+    lang = Language(tsc.language())
+    parser = Parser(lang)
+    tree = parser.parse(source)
+
+    from ethunter.analyzer.initializer_assign import analyze as init_analyze
+    from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
+    from ethunter.analyzer.dataflow import VariableState
+
+    st = SymbolTable()
+    for func in extract_functions(tree, "test.c"):
+        st.add_function(func)
+    df = VariableState()
+
+    init_analyze(tree=tree, filepath="test.c", symbol_table=st, dataflow=df)
+
+    # After fix: <gstruct:table.handler> should contain do_a and do_b
+    targets = df.resolve('<gstruct:table.handler>')
+    assert 'do_a' in targets, f"Expected do_a in table.handler, got: {targets}"
+    assert 'do_b' in targets, f"Expected do_b in table.handler, got: {targets}"
+    # Also check garray
+    garray_targets = df.resolve('<garray:table>')
+    assert 'do_a' in garray_targets, f"Expected do_a in garray:table"
+    assert 'do_b' in garray_targets, f"Expected do_b in garray:table"

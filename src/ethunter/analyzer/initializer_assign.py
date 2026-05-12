@@ -90,7 +90,7 @@ def analyze(
                                     if fcc.type == 'field_identifier' and fcc.text:
                                         field_list.append(fcc.text.decode('utf-8'))
                                     # Function pointer: void (*field_name)(...) — name is in pointer_declarator
-                                    if fcc.type in ('function_declarator', 'pointer_declarator', 'parenthesized_declarator'):
+                                    if fcc.type in ('function_declarator', 'pointer_declarator', 'parenthesized_declarator', 'array_declarator'):
                                         name = _extract_declarator_id(fcc)
                                         if name:
                                             field_list.append(name)
@@ -191,25 +191,42 @@ def analyze(
         # Positional (pure identifier/cast list): { func_a, (type)func_b, ... }
         # For structs, map positional index → field name from struct_field_map
         field_names = struct_field_map.get(struct_type, []) if struct_type else []
+        # Node types that represent value positions (increment index)
+        _VALUE_TYPES = {
+            'identifier', 'cast_expression', 'call_expression',
+            'string_literal', 'number_literal', 'null',
+            'pointer_expression', 'field_expression',
+            'parenthesized_expression', 'char_literal', 'concatenated_string',
+            'sizeof_expression', 'conditional_expression',
+            'binary_expression', 'unary_expression', 'subscript_expression',
+        }
+        # Node types that carry function targets (store to dataflow)
+        _STORE_TYPES = {'identifier', 'cast_expression', 'call_expression'}
+
         index = 0
         for c in init_list.children:
-            if c.type in ('identifier', 'cast_expression', 'call_expression'):
-                target = _extract_function_from_value(c)
-                if target:
-                    dataflow.assign(f'<garray:{var_name}>', target)
-                    # Store with numeric index
-                    dataflow.assign(f'<gstruct:{var_name}.{index}>', target)
-                    # Also store with field name if we can map the index
-                    if index < len(field_names):
-                        field_name = field_names[index]
-                        dataflow.assign(f'<gstruct:{var_name}.{field_name}>', target)
-                    index += 1
+            if c.type in _VALUE_TYPES:
+                if c.type in _STORE_TYPES:
+                    target = _extract_function_from_value(c)
+                    if target:
+                        dataflow.assign(f'<garray:{var_name}>', target)
+                        dataflow.assign(f'<gstruct:{var_name}.{index}>', target)
+                        if index < len(field_names):
+                            field_name = field_names[index]
+                            dataflow.assign(f'<gstruct:{var_name}.{field_name}>', target)
+                index += 1
             elif c.type == 'initializer_list':
+                inner_index = 0
                 for inner in c.children:
-                    if inner.type in ('identifier', 'cast_expression'):
-                        target = _extract_function_from_value(inner)
-                        if target:
-                            dataflow.assign(f'<garray:{var_name}>', target)
+                    if inner.type in _VALUE_TYPES:
+                        if inner.type in _STORE_TYPES:
+                            target = _extract_function_from_value(inner)
+                            if target:
+                                dataflow.assign(f'<garray:{var_name}>', target)
+                                if inner_index < len(field_names):
+                                    field_name = field_names[inner_index]
+                                    dataflow.assign(f'<gstruct:{var_name}.{field_name}>', target)
+                        inner_index += 1
 
     def _collect_pointer_resolutions() -> dict[str, str]:
         """Scan function bodies for ptr = &global_name[...] or ptr = &global_name patterns.
