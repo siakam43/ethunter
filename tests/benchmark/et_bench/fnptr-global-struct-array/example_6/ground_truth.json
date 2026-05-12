@@ -24,8 +24,6 @@
     {"caller": "main", "callee": "zfs_do_send"},
     {"caller": "main", "callee": "zfs_do_receive"},
     {"caller": "main", "callee": "zfs_do_allow"},
-    {"caller": "main", "callee": "zfs_do_receive"},
-    {"caller": "main", "callee": "zfs_do_allow"},
     {"caller": "main", "callee": "zfs_do_unallow"},
     {"caller": "main", "callee": "zfs_do_hold"},
     {"caller": "main", "callee": "zfs_do_holds"},
