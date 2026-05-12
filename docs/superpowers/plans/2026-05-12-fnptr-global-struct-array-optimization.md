@@ -350,8 +350,6 @@ In Pass 2's `_visit` function, in the `if field_path:` block, add a new fallback
                             resolved_base = pointer_resolutions[base_name]
                             field_suffix = '.'.join(field_path.split('.')[1:])
                             targets = dataflow.resolve(f'<gstruct:{resolved_base}.{field_suffix}>')
-                            if not targets and '.' in resolved_base:
-                                targets = dataflow.resolve(f'<gstruct:{resolved_base}.{field_suffix}>')
 ```
 
 - [ ] **Step 6: Run test to verify it passes**
@@ -536,11 +534,9 @@ In `src/ethunter/analyzer/initializer_assign.py`, add at the end of the `analyze
                                     has_garray = bool(dataflow.resolve(f'<garray:{arg_name}>'))
                                     if (has_gstruct or has_garray) and arg_idx < len(param_names):
                                         pname = param_names[arg_idx]
-                                        # Register via DataflowEngine if available
-                                        if hasattr(dataflow, 'param_alias_map'):
-                                            if not hasattr(dataflow, 'param_alias_map'):
-                                                dataflow.param_alias_map = {}
-                                            dataflow.param_alias_map[(callee, pname)] = arg_name
+                                        if not hasattr(dataflow, 'param_alias_map'):
+                                            dataflow.param_alias_map = {}
+                                        dataflow.param_alias_map[(callee, pname)] = arg_name
                                 arg_idx += 1
             for child in n.children:
                 _scan_calls(child)
@@ -877,20 +873,21 @@ In `src/ethunter/analyzer/field_call.py`, add import at top:
 from ethunter.analyzer.local_fp_tracker import collect_local_fp_assignments
 ```
 
-In Pass 2's `_visit` function, add before the loop of suffix/fallback lookups (around line 96, before `targets = set()`):
-
+In `analyze()`, after Pass 1b (pointer_resolutions), add:
 ```python
-                if field_path:
-                    # Try local_fp_tracker mapping first (Fix C3)
-                    local_mapping = collect_local_fp_assignments(tree, dataflow, symbol_names)
-                    base_name = field_path.split('.')[0]
-                    if base_name in local_mapping:
-                        targets = local_mapping[base_name].copy()
-                    else:
-                        targets = set()
+    # Pass 1c: collect local fp assignments for C3 fallback
+    local_fp_mapping = collect_local_fp_assignments(tree, dataflow, symbol_names)
 ```
 
-Replace the line `targets = set()` (at original line ~98) with the above block — i.e., initialize `targets = set()` as the else branch.
+In Pass 2's `_visit` function, add a new fallback in the lookup chain, after the Fix B fallback and before the `<vtable:path>` fallback:
+
+```python
+                    # Fallback: local_fp_tracker mapping (Fix C3)
+                    if not targets and '.' in field_path:
+                        base_name = field_path.split('.')[0]
+                        if base_name in local_fp_mapping:
+                            targets = local_fp_mapping[base_name].copy()
+```
 
 - [ ] **Step 5: Run test to verify it passes**
 
