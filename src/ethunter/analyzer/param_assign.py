@@ -409,6 +409,18 @@ def analyze(
 
     _detect_param_calls(tree.root_node)
 
+    # Emit Pass 3 edges: calls through parameters inside callee body
+    for (caller, target, fp, line) in call_site_edges:
+        edges.append(CallEdge(
+            caller=caller,
+            callee=target,
+            caller_file=fp,
+            callee_file='',
+            type=CallType.INDIRECT,
+            indirect_kind='callback_param',
+            caller_line=line,
+        ))
+
     # === Pass 4: emit edges from call-site to actual targets ===
     call_targets: dict[tuple[str, str], tuple[str, int]] = {}  # (outer_caller, target) -> (filepath, line)
 

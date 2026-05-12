@@ -580,3 +580,45 @@ def test_direct_assign_no_symbol_names_guard():
     pairs = {(e.caller, e.callee) for e in graph.edges if e.type.value == 'indirect'}
     assert ('use_strdup', 'strdup') in pairs, \
         f"Expected use_strdup -> strdup, got: {pairs}"
+
+
+def test_param_local_call_direct():
+    """Phase 2: callee(fnptr) pattern where fnptr is called directly inside callee."""
+    import tree_sitter_c as tsc
+    from tree_sitter import Language, Parser
+
+    source = b'''
+    typedef char *(*fmt_fn)(long double n);
+
+    static char *format_time_us(long double n) {
+        (void)n;
+        return "1.00us";
+    }
+
+    static void print_units(long double n, fmt_fn fmt, int width) {
+        char *msg = fmt(n);
+        (void)msg;
+        (void)width;
+    }
+
+    void main_func(void) {
+        print_units(100.0, format_time_us, 10);
+    }
+    '''
+    lang = Language(tsc.language())
+    parser = Parser(lang)
+    tree = parser.parse(source)
+
+    from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
+    from ethunter.analyzer.dataflow import VariableState
+    from ethunter.analyzer.orchestrator import run_all_analyses
+
+    st = SymbolTable()
+    for func in extract_functions(tree, "test.c"):
+        st.add_function(func)
+    df = VariableState()
+
+    graph = run_all_analyses({"test.c": tree}, st, df)
+    pairs = {(e.caller, e.callee) for e in graph.edges if e.type.value == 'indirect'}
+    assert ('print_units', 'format_time_us') in pairs, \
+        f"Expected print_units -> format_time_us, got: {pairs}"
