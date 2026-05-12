@@ -510,3 +510,36 @@ def test_fix_c2_call_expression_rhs_field_assign():
     pairs = {(e.caller, e.callee) for e in graph.edges}
     assert ('use_ops', 'my_transform') in pairs, \
         f"Missing use_ops -> my_transform. Got: {pairs}"
+
+
+def test_cast_assign_no_symbol_names_guard():
+    """Phase 1: (type)stdlib_func cast where target is NOT in symbol_names should still be tracked."""
+    import tree_sitter_c as tsc
+    from tree_sitter import Language, Parser
+
+    source = b'''
+    typedef void *(*alloc_fn)(size_t nmemb, size_t size);
+
+    alloc_fn my_alloc = (alloc_fn)calloc;
+
+    void use_alloc(void) {
+        my_alloc(1, 64);
+    }
+    '''
+    lang = Language(tsc.language())
+    parser = Parser(lang)
+    tree = parser.parse(source)
+
+    from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
+    from ethunter.analyzer.dataflow import VariableState
+    from ethunter.analyzer.orchestrator import run_all_analyses
+
+    st = SymbolTable()
+    for func in extract_functions(tree, "test.c"):
+        st.add_function(func)
+    df = VariableState()
+
+    graph = run_all_analyses({"test.c": tree}, st, df)
+    pairs = {(e.caller, e.callee) for e in graph.edges if e.type.value == 'indirect'}
+    assert ('use_alloc', 'calloc') in pairs, \
+        f"Expected use_alloc -> calloc, got: {pairs}"

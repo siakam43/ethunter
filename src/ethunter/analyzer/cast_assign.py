@@ -30,8 +30,7 @@ def analyze(
             value = node.child_by_field_name('value')
             if value and value.type == 'identifier' and value.text:
                 name = value.text.decode('utf-8')
-                if name in symbol_names:
-                    return name
+                return name
         return None
 
     def _visit(node: ts.Node) -> None:

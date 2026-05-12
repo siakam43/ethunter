@@ -30,15 +30,14 @@ def analyze(
         # Try unwrap_cast if dataflow has it (DataflowEngine)
         if hasattr(dataflow, 'unwrap_cast'):
             result = dataflow.unwrap_cast(node)
-            if result and result in symbol_names:
+            if result:
                 return result
         # Fallback: original single-level logic
         if node.type == 'cast_expression':
             value = node.child_by_field_name('value')
             if value and value.type == 'identifier' and value.text:
                 name = value.text.decode('utf-8')
-                if name in symbol_names:
-                    return name
+                return name
         return None
 
     def _extract_function_from_value(value_node: ts.Node) -> str | None:
