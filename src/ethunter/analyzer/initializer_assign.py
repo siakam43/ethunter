@@ -202,6 +202,8 @@ def analyze(
         }
         # Node types that carry function targets (store to dataflow)
         _STORE_TYPES = {'identifier', 'cast_expression', 'call_expression'}
+        # pointer_expression stores struct names (for array-of-struct-pointers)
+        _STRUCT_REF_TYPES = {'pointer_expression'}
 
         index = 0
         for c in init_list.children:
@@ -214,6 +216,11 @@ def analyze(
                         if index < len(field_names):
                             field_name = field_names[index]
                             dataflow.assign(f'<gstruct:{var_name}.{field_name}>', target)
+                elif c.type in _STRUCT_REF_TYPES:
+                    # &struct_name -> store struct name for downstream resolution
+                    inner = c.children[-1] if c.children else None
+                    if inner and inner.type == 'identifier' and inner.text:
+                        dataflow.assign(f'<garray:{var_name}>', inner.text.decode('utf-8'))
                 index += 1
             elif c.type == 'initializer_list':
                 inner_index = 0
@@ -226,6 +233,10 @@ def analyze(
                                 if inner_index < len(field_names):
                                     field_name = field_names[inner_index]
                                     dataflow.assign(f'<gstruct:{var_name}.{field_name}>', target)
+                        elif inner.type in _STRUCT_REF_TYPES:
+                            ref = inner.children[-1] if inner.children else None
+                            if ref and ref.type == 'identifier' and ref.text:
+                                dataflow.assign(f'<garray:{var_name}>', ref.text.decode('utf-8'))
                         inner_index += 1
 
     def _track_pointer_field_assignments(

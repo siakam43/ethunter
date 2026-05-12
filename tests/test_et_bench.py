@@ -407,3 +407,106 @@ def test_fix_b_param_alias_registration():
         f"Expected (process, list) in param_alias_map, got: {engine.param_alias_map}"
     assert engine.param_alias_map[('process', 'list')] == 'items', \
         f"Expected items, got: {engine.param_alias_map.get(('process', 'list'))}"
+
+
+def test_fix_c1_pointer_expression_in_array_init():
+    """Fix C1: &struct_name in array initializers produces garray entries."""
+    import tree_sitter_c as tsc
+    from tree_sitter import Language, Parser
+
+    source = b'''
+    typedef void (*transform_fn)(void);
+
+    struct impl {
+        const char *name;
+        transform_fn transform;
+    };
+
+    static void my_transform(void) {}
+
+    static const struct impl my_impl = {
+        "generic", my_transform
+    };
+
+    static const struct impl *const impls[] = {
+        &my_impl,
+    };
+    '''
+    lang = Language(tsc.language())
+    parser = Parser(lang)
+    tree = parser.parse(source)
+
+    from ethunter.analyzer.initializer_assign import analyze as init_analyze
+    from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
+    from ethunter.analyzer.dataflow import VariableState
+
+    st = SymbolTable()
+    for func in extract_functions(tree, "test.c"):
+        st.add_function(func)
+    df = VariableState()
+
+    init_analyze(tree=tree, filepath="test.c", symbol_table=st, dataflow=df)
+
+    # After C1: <garray:impls> should contain the struct name
+    targets = df.resolve('<garray:impls>')
+    assert 'my_impl' in targets, f"Expected my_impl in <garray:impls>, got: {targets}"
+
+
+def test_fix_c2_call_expression_rhs_field_assign():
+    """Fix C2/C3: obj->field = func_call() resolves through callee return + local_fp_tracker."""
+    import tree_sitter_c as tsc
+    from tree_sitter import Language, Parser
+
+    source = b'''
+    typedef void (*transform_fn)(void);
+
+    struct ops {
+        const char *name;
+        transform_fn transform;
+    };
+
+    static void my_transform(void) {}
+
+    static const struct ops my_impl = {
+        "generic", my_transform,
+    };
+
+    static const struct ops *const impls[] = {
+        &my_impl,
+    };
+
+    static const struct ops *get_ops(void) {
+        return impls[0];
+    }
+
+    struct ctx {
+        const struct ops *ops;
+    };
+
+    void use_ops(struct ctx *ctx) {
+        const struct ops *ops = ctx->ops;
+        if (ops && ops->transform)
+            ops->transform();
+    }
+
+    void init(struct ctx *ctx) {
+        ctx->ops = get_ops();
+    }
+    '''
+    lang = Language(tsc.language())
+    parser = Parser(lang)
+    tree = parser.parse(source)
+
+    from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
+    from ethunter.analyzer.dataflow import VariableState
+    from ethunter.analyzer.orchestrator import run_all_analyses
+
+    st = SymbolTable()
+    for func in extract_functions(tree, "test.c"):
+        st.add_function(func)
+    df = VariableState()
+
+    graph = run_all_analyses({"test.c": tree}, st, df)
+    pairs = {(e.caller, e.callee) for e in graph.edges}
+    assert ('use_ops', 'my_transform') in pairs, \
+        f"Missing use_ops -> my_transform. Got: {pairs}"

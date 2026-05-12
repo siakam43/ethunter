@@ -22,6 +22,7 @@ from ethunter.analyzer.helpers import (
     find_enclosing_function, extract_field_path, collect_field_assignments,
     collect_pointer_resolutions,
 )
+from ethunter.analyzer.local_fp_tracker import collect_local_fp_assignments
 
 
 def _collect_macros(tree: ts.Tree) -> dict[str, str]:
@@ -91,6 +92,9 @@ def analyze(
 
     # Pass 1b: collect pointer resolutions (local var -> global array/struct name)
     pointer_resolutions = collect_pointer_resolutions(tree)
+
+    # Pass 1c: collect local fp assignments for C3 fallback
+    local_fp_mapping = collect_local_fp_assignments(tree, dataflow, symbol_names)
 
     # Pass 2: detect call sites (existing logic, minus the assignment block)
     def _visit(node: ts.Node) -> None:
@@ -185,6 +189,11 @@ def analyze(
                                 global_name = dataflow.param_alias_map[alias_key]
                                 field_suffix = '.'.join(field_path.split('.')[1:])
                                 targets = dataflow.resolve(f'<gstruct:{global_name}.{field_suffix}>')
+                    # Fallback: local_fp_tracker mapping (Fix C3)
+                    if not targets and '.' in field_path:
+                        base_name = field_path.split('.')[0]
+                        if base_name in local_fp_mapping:
+                            targets = local_fp_mapping[base_name].copy()
                     # Fallback: pointer alias resolution (Fix A)
                     if not targets and '.' in field_path:
                         base_name = field_path.split('.')[0]
