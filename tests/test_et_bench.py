@@ -746,17 +746,15 @@ def test_param_callback_of_callback():
     from tree_sitter import Language, Parser
 
     source = b'''
-    typedef void (*op_fn)(void *ptr);
-
     static void my_relocate(void *ptr) { (void)ptr; }
 
     typedef struct {
-        void (*note_fn)(void *obj, void *cookie, op_fn op);
+        void (*note_fn)(void *obj, void *cookie, void (*op)(void *ptr));
         void *obj;
         void *cookie;
     } ptr_data_t;
 
-    static void my_note_fn(void *obj, void *cookie, op_fn op) {
+    static void my_note_fn(void *obj, void *cookie, void (*op)(void *ptr)) {
         op(obj);
     }
 

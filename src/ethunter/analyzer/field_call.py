@@ -208,6 +208,43 @@ def analyze(
                     if not targets:
                         targets = dataflow.resolve('<vtable_init>')
 
+                    # Callback-of-callback: check if any resolved target has fnptr params
+                    func_fp_params = getattr(dataflow, 'func_fp_params', None)
+                    if func_fp_params is None and hasattr(dataflow, 'state'):
+                        func_fp_params = getattr(dataflow.state, 'func_fp_params', None)
+
+                    if func_fp_params:
+                        args = node.child_by_field_name('arguments')
+                        if args:
+                            comma_count = 0
+                            arg_values = []
+                            for c in args.children:
+                                if c.type == ',':
+                                    comma_count += 1
+                                elif c.type not in ('(', ')'):
+                                    arg_values.append((comma_count, c))
+                            for ftarget in targets:
+                                fp_positions = func_fp_params.get(ftarget, set())
+                                for pos, arg_node in arg_values:
+                                    if pos in fp_positions:
+                                        actual = None
+                                        if arg_node.type == 'identifier' and arg_node.text:
+                                            actual = arg_node.text.decode('utf-8')
+                                        elif arg_node.type == 'pointer_expression' and arg_node.children:
+                                            inner = arg_node.children[-1]
+                                            if inner.type == 'identifier' and inner.text:
+                                                actual = inner.text.decode('utf-8')
+                                        if actual and actual in symbol_names:
+                                            edges.append(CallEdge(
+                                                caller=caller or '<unknown>',
+                                                callee=actual,
+                                                caller_file=filepath,
+                                                callee_file='',
+                                                type=CallType.INDIRECT,
+                                                indirect_kind='callback_param',
+                                                caller_line=node.start_point[0] + 1,
+                                            ))
+
                     for target in targets:
                         edges.append(CallEdge(
                             caller=caller or '<unknown>',

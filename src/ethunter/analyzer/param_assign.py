@@ -79,8 +79,18 @@ def _extract_field_operand(field_expr) -> str | None:
     return None
 
 
-def _collect_func_params(node, func_params: dict) -> None:
-    """Collect function parameter lists from function definitions."""
+def _has_fnptr_declarator(node) -> bool:
+    """Check if a parameter_declaration subtree contains a function_declarator (fnptr param)."""
+    if node.type == 'function_declarator':
+        return True
+    for c in node.children:
+        if _has_fnptr_declarator(c):
+            return True
+    return False
+
+
+def _collect_func_params(node, func_params: dict, func_fp_params: dict | None = None) -> None:
+    """Collect function parameter lists and optionally fnptr parameter positions."""
     if node.type == 'function_definition':
         decl = _find_child(node, 'function_declarator')
         if not decl:
@@ -94,16 +104,23 @@ def _collect_func_params(node, func_params: dict) -> None:
             fname, inner_decl = _find_func_name_from_decl(decl)
             if fname:
                 params = []
+                fp_positions = set()
                 plist = _find_child(inner_decl, 'parameter_list')
                 if plist:
+                    pos = 0
                     for p in plist.children:
                         if p.type == 'parameter_declaration':
                             pname = _extract_param_name(p)
                             if pname:
                                 params.append(pname)
+                                if func_fp_params is not None and _has_fnptr_declarator(p):
+                                    fp_positions.add(pos)
+                                pos += 1
                 func_params[fname] = params
+                if func_fp_params is not None and fp_positions:
+                    func_fp_params[fname] = fp_positions
     for child in node.children:
-        _collect_func_params(child, func_params)
+        _collect_func_params(child, func_params, func_fp_params)
 
 
 def _extract_param_name(param_decl) -> str | None:
@@ -224,8 +241,15 @@ def analyze(
     symbol_names = symbol_table.all_function_names
 
     func_params: dict[str, list[str]] = {}  # func_name -> [param_names]
+    func_fp_params: dict[str, set[int]] = {}  # func_name -> {fnptr_param_positions}
 
-    _collect_func_params(tree.root_node, func_params)
+    _collect_func_params(tree.root_node, func_params, func_fp_params)
+
+    # Store func_fp_params in dataflow for field_call callback-of-callback handling
+    if hasattr(dataflow, 'state'):
+        dataflow.state.func_fp_params = func_fp_params
+    else:
+        dataflow.func_fp_params = func_fp_params
 
     # === Collect return value tracking ===
     if hasattr(dataflow, 'register_return'):
@@ -308,6 +332,7 @@ def analyze(
                                         if pname not in param_mappings:
                                             param_mappings[pname] = set()
                                         param_mappings[pname].add(target)
+                                        dataflow.assign(pname, target)
                                 _propagate_call_site(
                                     call_name, arg_idx, target,
                                     dataflow, symbol_names
@@ -376,6 +401,7 @@ def analyze(
                                         if pname not in param_mappings:
                                             param_mappings[pname] = set()
                                         param_mappings[pname].add(target)
+                                        dataflow.assign(pname, target)
                                     _propagate_call_site(
                                         call_name, arg_idx, target,
                                         dataflow, symbol_names
