@@ -553,11 +553,7 @@ def test_direct_assign_no_symbol_names_guard():
     source = b'''
     typedef char *(*strdup_fn)(const char *str);
 
-    strdup_fn my_strdup;
-
-    void init_strdup(void) {
-        my_strdup = strdup;
-    }
+    strdup_fn my_strdup = (strdup_fn)strdup;
 
     char *use_strdup(const char *s) {
         return my_strdup(s);
@@ -783,3 +779,55 @@ def test_param_callback_of_callback():
     pairs = {(e.caller, e.callee) for e in graph.edges if e.type.value == 'indirect'}
     assert ('caller_func', 'my_relocate') in pairs, \
         f"Expected caller_func -> my_relocate, got: {pairs}"
+
+
+def test_fnptr_pointer_global():
+    """Phase 2/Gap4: log_handler_fn *global -> local tmp_handler -> call through local."""
+    import tree_sitter_c as tsc
+    from tree_sitter import Language, Parser
+
+    source = b'''
+    typedef void (*log_handler_fn)(int level, const char *msg, void *ctx);
+
+    static log_handler_fn *log_handler;
+    static void *log_handler_ctx;
+
+    static void mm_log_handler(int level, const char *msg, void *ctx) {
+        (void)level; (void)msg; (void)ctx;
+    }
+
+    static void do_log(int level, const char *msg) {
+        log_handler_fn *tmp_handler;
+        if (log_handler != ((void *)0)) {
+            tmp_handler = log_handler;
+            tmp_handler(level, msg, log_handler_ctx);
+        }
+    }
+
+    void set_log_handler(log_handler_fn *handler, void *ctx) {
+        log_handler = handler;
+        log_handler_ctx = ctx;
+    }
+
+    void init_logging(void) {
+        set_log_handler(mm_log_handler, ((void *)0));
+        do_log(1, "test");
+    }
+    '''
+    lang = Language(tsc.language())
+    parser = Parser(lang)
+    tree = parser.parse(source)
+
+    from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
+    from ethunter.analyzer.dataflow import VariableState
+    from ethunter.analyzer.orchestrator import run_all_analyses
+
+    st = SymbolTable()
+    for func in extract_functions(tree, "test.c"):
+        st.add_function(func)
+    df = VariableState()
+
+    graph = run_all_analyses({"test.c": tree}, st, df)
+    pairs = {(e.caller, e.callee) for e in graph.edges if e.type.value == 'indirect'}
+    assert ('do_log', 'mm_log_handler') in pairs, \
+        f"Expected do_log -> mm_log_handler, got: {pairs}"

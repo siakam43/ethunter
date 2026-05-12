@@ -326,6 +326,9 @@ def analyze(
                                         indirect_kind='callback_reg',
                                         caller_line=node.start_point[0] + 1,
                                     ))
+                                    if arg_idx < len(param_names):
+                                        pname = param_names[arg_idx]
+                                        dataflow.assign(pname, target)
                                 else:
                                     if arg_idx < len(param_names):
                                         pname = param_names[arg_idx]

@@ -39,13 +39,11 @@ def analyze(
                     if target in symbol_names:
                         dataflow.assign(var_name, target)
                     else:
-                        # Alias chain: fp2 = fp1 (OR stdlib function)
+                        # Alias chain: fp2 = fp1
                         targets = dataflow.resolve(target)
                         if targets:
                             for t in targets:
                                 dataflow.assign(var_name, t)
-                        else:
-                            dataflow.assign(var_name, target)
 
         # init_declarator: void (*fp)(void) = func_name or *var = &target
         if node.type == 'init_declarator':
@@ -86,4 +84,38 @@ def analyze(
             _visit(child)
 
     _visit(tree.root_node)
+
+    # Pass 2: re-resolve alias chains where first pass had unresolved RHS
+    # (e.g., tmp_handler = log_handler where log_handler is assigned later in tree)
+    def _visit_pass2(node: ts.Node) -> None:
+        if node.type == 'assignment_expression':
+            lhs = node.child_by_field_name('left') or node.children[0]
+            rhs = node.child_by_field_name('right') or node.children[1]
+            if (lhs and rhs and lhs.type == 'identifier' and lhs.text
+                    and rhs.type == 'identifier' and rhs.text):
+                var_name = lhs.text.decode('utf-8')
+                target = rhs.text.decode('utf-8')
+                if target not in symbol_names:
+                    targets = dataflow.resolve(target)
+                    if targets:
+                        dataflow.targets[var_name] = set()
+                        for t in targets:
+                            dataflow.assign(var_name, t)
+            # Re-check init_declarators with deferred resolution
+            if node.type == 'init_declarator':
+                declarator = node.child_by_field_name('declarator')
+                value = node.child_by_field_name('value')
+                if (declarator and value and value.type == 'identifier'
+                        and value.text):
+                    var_name = extract_identifier_from_declarator(declarator)
+                    target = value.text.decode('utf-8')
+                    if var_name and target not in symbol_names:
+                        targets = dataflow.resolve(target)
+                        if targets and var_name not in dataflow.targets:
+                            for t in targets:
+                                dataflow.assign(var_name, t)
+        for child in node.children:
+            _visit_pass2(child)
+
+    _visit_pass2(tree.root_node)
     return edges

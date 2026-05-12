@@ -24,10 +24,10 @@ from ethunter.analyzer import (
 )
 
 TARGET_RESOLVERS = [
+    param_assign,
     direct_assign,
     initializer_assign,
     cast_assign,
-    param_assign,
 ]
 
 CALL_DETECTORS = [
