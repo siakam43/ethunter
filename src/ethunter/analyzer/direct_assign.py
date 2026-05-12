@@ -39,11 +39,13 @@ def analyze(
                     if target in symbol_names:
                         dataflow.assign(var_name, target)
                     else:
-                        # Alias chain: fp2 = fp1
+                        # Alias chain: fp2 = fp1 (OR stdlib function)
                         targets = dataflow.resolve(target)
                         if targets:
                             for t in targets:
                                 dataflow.assign(var_name, t)
+                        else:
+                            dataflow.assign(var_name, target)
 
         # init_declarator: void (*fp)(void) = func_name or *var = &target
         if node.type == 'init_declarator':

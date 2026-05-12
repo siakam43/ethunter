@@ -543,3 +543,40 @@ def test_cast_assign_no_symbol_names_guard():
     pairs = {(e.caller, e.callee) for e in graph.edges if e.type.value == 'indirect'}
     assert ('use_alloc', 'calloc') in pairs, \
         f"Expected use_alloc -> calloc, got: {pairs}"
+
+
+def test_direct_assign_no_symbol_names_guard():
+    """Phase 1b: direct assignment fp = stdlib_func where target not in symbol_names should be tracked."""
+    import tree_sitter_c as tsc
+    from tree_sitter import Language, Parser
+
+    source = b'''
+    typedef char *(*strdup_fn)(const char *str);
+
+    strdup_fn my_strdup;
+
+    void init_strdup(void) {
+        my_strdup = strdup;
+    }
+
+    char *use_strdup(const char *s) {
+        return my_strdup(s);
+    }
+    '''
+    lang = Language(tsc.language())
+    parser = Parser(lang)
+    tree = parser.parse(source)
+
+    from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
+    from ethunter.analyzer.dataflow import VariableState
+    from ethunter.analyzer.orchestrator import run_all_analyses
+
+    st = SymbolTable()
+    for func in extract_functions(tree, "test.c"):
+        st.add_function(func)
+    df = VariableState()
+
+    graph = run_all_analyses({"test.c": tree}, st, df)
+    pairs = {(e.caller, e.callee) for e in graph.edges if e.type.value == 'indirect'}
+    assert ('use_strdup', 'strdup') in pairs, \
+        f"Expected use_strdup -> strdup, got: {pairs}"
