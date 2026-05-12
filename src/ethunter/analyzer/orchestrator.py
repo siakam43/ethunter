@@ -31,8 +31,8 @@ TARGET_RESOLVERS = [
 ]
 
 CALL_DETECTORS = [
-    direct_call_fp,
     field_call,
+    direct_call_fp,
     array_call,
 ]
 

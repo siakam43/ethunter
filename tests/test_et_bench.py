@@ -831,3 +831,51 @@ def test_fnptr_pointer_global():
     pairs = {(e.caller, e.callee) for e in graph.edges if e.type.value == 'indirect'}
     assert ('do_log', 'mm_log_handler') in pairs, \
         f"Expected do_log -> mm_log_handler, got: {pairs}"
+
+
+def test_local_fp_from_struct_field_init():
+    """Phase 3/Gap2: Type *fp = obj->field; fp() resolves through field_call+direct_call_fp chain."""
+    import tree_sitter_c as tsc
+    from tree_sitter import Language, Parser
+
+    source = b'''
+    typedef int (*holdfunc_t)(void *dp, const char *name, void *tag, void **dsp);
+
+    static int my_hold(void *dp, const char *name, void *tag, void **dsp) {
+        return 0;
+    }
+
+    typedef struct {
+        holdfunc_t holdfunc;
+    } arg_t;
+
+    static void release_sync(void *arg_ptr) {
+        arg_t *a = (arg_t *)arg_ptr;
+        holdfunc_t *hf = a->holdfunc;
+        void *ds;
+        hf(((void *)0), "test", ((void *)0), &ds);
+    }
+
+    void setup_and_call(void) {
+        arg_t a;
+        a.holdfunc = (holdfunc_t)my_hold;
+        release_sync(&a);
+    }
+    '''
+    lang = Language(tsc.language())
+    parser = Parser(lang)
+    tree = parser.parse(source)
+
+    from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
+    from ethunter.analyzer.dataflow import VariableState
+    from ethunter.analyzer.orchestrator import run_all_analyses
+
+    st = SymbolTable()
+    for func in extract_functions(tree, "test.c"):
+        st.add_function(func)
+    df = VariableState()
+
+    graph = run_all_analyses({"test.c": tree}, st, df)
+    pairs = {(e.caller, e.callee) for e in graph.edges if e.type.value == 'indirect'}
+    assert ('release_sync', 'my_hold') in pairs, \
+        f"Expected release_sync -> my_hold, got: {pairs}"
