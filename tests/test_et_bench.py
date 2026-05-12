@@ -154,7 +154,6 @@ def test_et_bench_fnptr_struct_example_12():
     assert ('s_server_main', 'alpn_cb') in pairs
 
 
-@pytest.mark.xfail(reason="example_9 return value tracking chain needs further investigation")
 def test_et_bench_fnptr_struct_example_9():
     """security_callback_debug -> ssl_security_default_callback (return value tracking)."""
     ex_dir = os.path.join(ET_BENCH_DIR, 'fnptr-struct', 'example_9')
@@ -163,7 +162,6 @@ def test_et_bench_fnptr_struct_example_9():
     assert ('security_callback_debug', 'ssl_security_default_callback') in pairs
 
 
-@pytest.mark.xfail(reason="example_5 cast+param propagation needs further investigation")
 def test_et_bench_fnptr_struct_example_5():
     """iterate_through_spacemap_logs_cb -> count_unflushed_space_cb et al (cast + param propagation)."""
     ex_dir = os.path.join(ET_BENCH_DIR, 'fnptr-struct', 'example_5')
@@ -175,7 +173,6 @@ def test_et_bench_fnptr_struct_example_5():
     assert len(matched) == len(expected_pairs), f"Missing: {expected_pairs - matched}"
 
 
-@pytest.mark.xfail(reason="examples 5 and 9 still need fixes; recall at 71.43% currently")
 def test_et_bench_fnptr_struct_full_recall():
     """fnptr-struct category should achieve 100% recall."""
     cat_dir = os.path.join(ET_BENCH_DIR, 'fnptr-struct')

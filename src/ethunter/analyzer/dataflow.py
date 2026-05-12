@@ -139,14 +139,33 @@ class DataflowEngine:
         self.ret_fields[func_name].add(field_path)
 
     def resolve_returned_field(self, func_name: str) -> set[str]:
-        """Resolve the targets of the field path that func_name returns."""
+        """Resolve the targets of the field path that func_name returns.
+
+        Exact <gstruct:{field_path}> lookup first, then suffix fallback for
+        variable-name mismatches (e.g., stored under "ret" but return uses "ctx").
+        """
         if func_name not in self.ret_fields:
             return set()
 
         results = set()
         for field_path in self.ret_fields[func_name]:
+            # Exact match (may find values set by later assignments in same scope)
             targets = self.state.resolve(f"<gstruct:{field_path}>")
             results.update(targets)
+
+            # Suffix fallback: also check other variable names for the same field
+            # (e.g., ret.sec_cb vs ctx.cert.sec_cb). Needed when getter runs
+            # before setter in the same function.
+            parts = field_path.split('.')
+            for i in range(1, len(parts)):
+                suffix = '.'.join(parts[i:])
+                before = len(results)
+                for key, vals in self.state.targets.items():
+                    if key.endswith(f'.{suffix}>') and vals:
+                        results.update(vals)
+                if len(results) > before:
+                    break
+
         return results
 
     # === New: CastResolver ===

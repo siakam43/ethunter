@@ -119,3 +119,110 @@ def handle_init_declarator(
             if targets:
                 for t in targets:
                     dataflow.assign(var_name, t)
+
+
+# --- Unified Field Assignment Collector ---
+
+from collections import namedtuple
+
+FieldAssignment = namedtuple('FieldAssignment', [
+    'field_path',
+    'value_node',
+    'resolved_value',
+    'form',
+    'enclosing_func',
+    'line',
+])
+
+
+def _unwrap_identifier(node: ts.Node, unwrap_fn=None) -> str | None:
+    """Extract identifier text from a node, unwrapping cast expressions."""
+    if node.type == 'identifier' and node.text:
+        return node.text.decode('utf-8')
+    if node.type == 'cast_expression':
+        if unwrap_fn:
+            result = unwrap_fn(node)
+            if result:
+                return result
+        for c in reversed(node.children):
+            result = _unwrap_identifier(c, unwrap_fn)
+            if result:
+                return result
+    return None
+
+
+def collect_field_assignments(tree: ts.Tree, unwrap_fn=None) -> list[FieldAssignment]:
+    """Collect all struct-field function pointer assignments from an AST.
+
+    Handles:
+    1. assignment_expression: ptr->field = rhs
+    2. designated_initializer: .field = val (inside init_declarator → initializer_list)
+    """
+    results: list[FieldAssignment] = []
+
+    def _extract_pair(pair_node: ts.Node, var_name: str, enclosing_func: str | None) -> None:
+        """Extract a single initializer_pair: .field = value.
+        Children are always [field_designator, '=', value].
+        """
+        field_name = None
+        for c in pair_node.children:
+            if c.type == 'field_designator':
+                for cc in c.children:
+                    if cc.type == 'field_identifier' and cc.text:
+                        field_name = cc.text.decode('utf-8')
+        value = pair_node.children[-1] if pair_node.children else None
+        if field_name and value:
+            field_path = f'{var_name}.{field_name}'
+            resolved = _unwrap_identifier(value, unwrap_fn)
+            results.append(FieldAssignment(
+                field_path=field_path,
+                value_node=value,
+                resolved_value=resolved,
+                form='designated_init',
+                enclosing_func=enclosing_func,
+                line=pair_node.start_point[0] + 1,
+            ))
+
+    def _scan(node: ts.Node) -> None:
+        # Form 1: assignment_expression
+        if node.type == 'assignment_expression':
+            lhs = node.child_by_field_name('left') or (node.children[0] if node.children else None)
+            rhs = node.child_by_field_name('right') or (
+                node.children[-1] if len(node.children) >= 2 else None
+            )
+            if lhs and rhs and lhs.type == 'field_expression':
+                field_path = extract_field_path(lhs)
+                if field_path:
+                    enclosing_func = find_enclosing_function(node, tree.root_node)
+                    resolved = _unwrap_identifier(rhs, unwrap_fn)
+                    results.append(FieldAssignment(
+                        field_path=field_path,
+                        value_node=rhs,
+                        resolved_value=resolved,
+                        form='assign',
+                        enclosing_func=enclosing_func,
+                        line=node.start_point[0] + 1,
+                    ))
+
+        # Form 2: designated_initializer inside init_declarator
+        if node.type == 'init_declarator':
+            declarator = node.child_by_field_name('declarator')
+            init_list = node.child_by_field_name('value')
+            if not init_list:
+                for c in node.children:
+                    if c.type == 'initializer_list':
+                        init_list = c
+                        break
+            if declarator and init_list and init_list.type == 'initializer_list':
+                var_name = extract_identifier_from_declarator(declarator)
+                if var_name:
+                    enclosing_func = find_enclosing_function(node, tree.root_node)
+                    for child in init_list.children:
+                        if child.type == 'initializer_pair':
+                            _extract_pair(child, var_name, enclosing_func)
+
+        for child in node.children:
+            _scan(child)
+
+    _scan(tree.root_node)
+    return results

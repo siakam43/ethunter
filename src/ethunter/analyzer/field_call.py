@@ -18,7 +18,7 @@ import tree_sitter as ts
 from ethunter.graph.model import CallEdge, CallType
 from ethunter.analyzer.dataflow import VariableState
 from ethunter.analyzer.symbol_table import SymbolTable
-from ethunter.analyzer.helpers import find_enclosing_function, extract_field_path
+from ethunter.analyzer.helpers import find_enclosing_function, extract_field_path, collect_field_assignments
 
 
 def _collect_macros(tree: ts.Tree) -> dict[str, str]:
@@ -82,21 +82,9 @@ def analyze(
         return node if node.type == 'field_expression' else None
 
     # Pass 1: collect all field assignments across the entire file
-    def _collect_assignments(node: ts.Node) -> None:
-        """Collect field = func_name assignments (extracted from the old _visit block)."""
-        if node.type == 'assignment_expression':
-            lhs = node.child_by_field_name('left') or node.children[0]
-            rhs = node.child_by_field_name('right') or node.children[1]
-            if lhs and rhs and lhs.type == 'field_expression' and rhs.type == 'identifier' and rhs.text:
-                target = rhs.text.decode('utf-8')
-                if target in symbol_names:
-                    field_path = extract_field_path(lhs)
-                    if field_path:
-                        dataflow.assign(f'<gstruct:{field_path}>', target)
-        for child in node.children:
-            _collect_assignments(child)
-
-    _collect_assignments(tree.root_node)
+    for fa in collect_field_assignments(tree, unwrap_fn=getattr(dataflow, 'unwrap_cast', None)):
+        if fa.resolved_value is not None and fa.resolved_value in symbol_names:
+            dataflow.assign(f'<gstruct:{fa.field_path}>', fa.resolved_value)
 
     # Pass 2: detect call sites (existing logic, minus the assignment block)
     def _visit(node: ts.Node) -> None:
@@ -132,6 +120,14 @@ def analyze(
                         garray_targets = dataflow.resolve(f'<garray:{base_name}>')
                         if garray_targets:
                             targets.update(garray_targets)
+                    # Always merge suffix-matched targets (even when <gstruct:> had partial hits)
+                    if '.' in field_path:
+                        parts = field_path.split('.')
+                        for i in range(1, len(parts)):
+                            suffix = '.'.join(parts[i:])
+                            for key, vals in dataflow.targets.items():
+                                if key.endswith(f'.{suffix}>') and vals:
+                                    targets.update(vals)
                     # Fallback: resolve struct alias (e.g., Curl_ssl -> Curl_ssl_openssl)
                     if not targets and '.' in field_path:
                         parts = field_path.split('.')

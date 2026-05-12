@@ -13,7 +13,7 @@ import tree_sitter as ts
 from ethunter.graph.model import CallEdge, CallType
 from ethunter.analyzer.dataflow import VariableState
 from ethunter.analyzer.symbol_table import SymbolTable
-from ethunter.analyzer.helpers import find_enclosing_function, extract_field_path
+from ethunter.analyzer.helpers import find_enclosing_function, extract_field_path, collect_field_assignments
 
 REG_PATTERNS = [
     'register', 'callback', 'hook', 'attach', 'subscribe', 'set_', 'on_', 'add_',
@@ -35,6 +35,37 @@ def _find_child(node, type_name: str):
     return None
 
 
+def _find_func_name_from_decl(decl):
+    """Extract function name and inner declarator from a function_declarator.
+
+    Returns (name, inner_decl) or (None, None).
+    The inner_decl is the function_declarator containing the actual params.
+    """
+    ident = _find_child(decl, 'identifier')
+    if ident and ident.text:
+        return ident.text.decode('utf-8'), decl
+
+    # Recursively search for inner function_declarator through
+    # parenthesized/pointer declarator wrappers
+    def _search_inner(node):
+        if node.type == 'function_declarator':
+            inner_ident = _find_child(node, 'identifier')
+            if inner_ident and inner_ident.text:
+                return inner_ident.text.decode('utf-8'), node
+        for c in node.children:
+            result = _search_inner(c)
+            if result[0]:
+                return result
+        return None, None
+
+    for c in decl.children:
+        if c.type in ('parenthesized_declarator', 'pointer_declarator'):
+            name, inner = _search_inner(c)
+            if name:
+                return name, inner
+    return None, None
+
+
 def _extract_field_operand(field_expr) -> str | None:
     """Extract the base identifier from a field_expression.
 
@@ -46,31 +77,6 @@ def _extract_field_operand(field_expr) -> str | None:
         if child.type == 'identifier' and child.text:
             return child.text.decode('utf-8')
     return None
-
-
-def _try_register_param_to_field(
-    lhs, rhs, param_name: str, field_path: str,
-    enclosing_func: str | None, func_params: dict,
-    dataflow,
-) -> None:
-    """Register param->field mapping if RHS is a function parameter.
-
-    Called from _visit when we detect: field_expression = identifier(param_name).
-    """
-    if not enclosing_func or enclosing_func not in func_params:
-        return
-    params = func_params[enclosing_func]
-    if param_name not in params:
-        return
-    param_idx = params.index(param_name)
-    lhs_operand = _extract_field_operand(lhs)
-    if not lhs_operand or lhs_operand not in params:
-        return
-    struct_param_idx = params.index(lhs_operand)
-    if hasattr(dataflow, 'register_param_mapping'):
-        dataflow.register_param_mapping(
-            enclosing_func, param_idx, field_path, struct_param_idx
-        )
 
 
 def _collect_func_params(node, func_params: dict) -> None:
@@ -85,11 +91,10 @@ def _collect_func_params(node, func_params: dict) -> None:
                         decl = d
                         break
         if decl:
-            func_name_node = _find_child(decl, 'identifier')
-            if func_name_node and func_name_node.text:
-                fname = func_name_node.text.decode('utf-8')
+            fname, inner_decl = _find_func_name_from_decl(decl)
+            if fname:
                 params = []
-                plist = _find_child(decl, 'parameter_list')
+                plist = _find_child(inner_decl, 'parameter_list')
                 if plist:
                     for p in plist.children:
                         if p.type == 'parameter_declaration':
@@ -139,23 +144,18 @@ def _register_phase(
 
     # Scan for field = param patterns -> register_param_mapping
     if hasattr(dataflow, 'register_param_mapping'):
-        def _scan_field_assigns(node: ts.Node) -> None:
-            if node.type == 'assignment_expression':
-                lhs = node.child_by_field_name('left') or node.children[0]
-                rhs = node.child_by_field_name('right') or node.children[1]
-                if lhs and rhs and lhs.type == 'field_expression' and rhs.type == 'identifier' and rhs.text:
-                    param_name = rhs.text.decode('utf-8')
-                    field_path = extract_field_path(lhs)
-                    if field_path:
-                        enclosing_func = find_enclosing_function(node, tree.root_node)
-                        _try_register_param_to_field(
-                            lhs, rhs, param_name, field_path,
-                            enclosing_func, func_params, dataflow
-                        )
-            for child in node.children:
-                _scan_field_assigns(child)
-
-        _scan_field_assigns(tree.root_node)
+        for fa in collect_field_assignments(tree, unwrap_fn=getattr(dataflow, 'unwrap_cast', None)):
+            if fa.enclosing_func is None or fa.enclosing_func not in func_params:
+                continue
+            if fa.resolved_value is None:
+                continue
+            params = func_params[fa.enclosing_func]
+            if fa.resolved_value not in params:
+                continue
+            param_idx = params.index(fa.resolved_value)
+            dataflow.register_param_mapping(
+                fa.enclosing_func, param_idx, fa.field_path
+            )
 
     # Scan for return field_expression -> register_return
     if hasattr(dataflow, 'register_return'):
@@ -173,12 +173,11 @@ def _register_phase(
                     for child in node.children:
                         _scan_returns(child)
                     return
-                fname_node = _find_child(decl, 'identifier')
-                if not fname_node or not fname_node.text:
+                fname, inner_decl = _find_func_name_from_decl(decl)
+                if not fname:
                     for child in node.children:
                         _scan_returns(child)
                     return
-                fname = fname_node.text.decode('utf-8')
                 params = func_params.get(fname, [])
                 body = _find_child(node, 'compound_statement')
                 if body:
@@ -244,12 +243,11 @@ def analyze(
                     for child in node.children:
                         _collect_returns(child)
                     return
-                fname_node = _find_child(decl, 'identifier')
-                if not fname_node or not fname_node.text:
+                fname, inner_decl = _find_func_name_from_decl(decl)
+                if not fname:
                     for child in node.children:
                         _collect_returns(child)
                     return
-                fname = fname_node.text.decode('utf-8')
                 params = func_params.get(fname, [])
 
                 body = _find_child(node, 'compound_statement')
@@ -353,46 +351,43 @@ def analyze(
     _collect_call_params(tree.root_node)
 
     # === Pass 2: resolve struct member assignments ===
-    def _visit(node: ts.Node) -> None:
-        if node.type == 'assignment_expression':
-            lhs = node.child_by_field_name('left') or node.children[0]
-            rhs = node.child_by_field_name('right') or node.children[1]
-            if lhs and rhs and lhs.type == 'field_expression':
-                field_path = extract_field_path(lhs)
-                if field_path:
-                    # === Case A: RHS is identifier (existing + registration) ===
-                    if rhs.type == 'identifier' and rhs.text:
-                        param_name = rhs.text.decode('utf-8')
-                        # EXISTING: resolve param to actual functions
-                        targets = param_mappings.get(param_name, set())
-                        for t in targets:
-                            dataflow.assign(f'<struct:{field_path}>', t)
-                        df_targets = dataflow.resolve(param_name)
-                        if not df_targets:
-                            df_targets = dataflow.resolve(f'<garray:{param_name}>')
-                        for t in df_targets:
-                            dataflow.assign(f'<struct:{field_path}>', t)
-                            field_name = field_path.split('.')[-1]
-                            dataflow.assign(f'<struct:{field_name}>', t)
-                        # NEW: register for cross-function propagation
-                        enclosing_func = find_enclosing_function(node, tree.root_node)
-                        _try_register_param_to_field(
-                            lhs, rhs, param_name, field_path,
-                            enclosing_func, func_params, dataflow
-                        )
-                    # === Case B: RHS is call_expression (return value tracking) ===
-                    elif rhs.type == 'call_expression':
-                        call_func = rhs.child_by_field_name('function') or rhs.children[0]
-                        if call_func and call_func.type == 'identifier' and call_func.text:
-                            func_name = call_func.text.decode('utf-8')
-                            if hasattr(dataflow, 'resolve_returned_field'):
-                                ret_targets = dataflow.resolve_returned_field(func_name)
-                                for t in ret_targets:
-                                    dataflow.assign(f'<gstruct:{field_path}>', t)
-        for child in node.children:
-            _visit(child)
+    for fa in collect_field_assignments(tree, unwrap_fn=getattr(dataflow, 'unwrap_cast', None)):
+        if fa.enclosing_func is None:
+            continue
+        field_path = fa.field_path
+        field_name = field_path.split('.')[-1]
 
-    _visit(tree.root_node)
+        if fa.value_node.type == 'call_expression':
+            # === Case B: RHS is call_expression (return value tracking) ===
+            call_func = fa.value_node.child_by_field_name('function') or fa.value_node.children[0]
+            if call_func and call_func.type == 'identifier' and call_func.text:
+                func_name = call_func.text.decode('utf-8')
+                if hasattr(dataflow, 'resolve_returned_field'):
+                    ret_targets = dataflow.resolve_returned_field(func_name)
+                    for t in ret_targets:
+                        dataflow.assign(f'<gstruct:{field_path}>', t)
+        elif fa.resolved_value is not None:
+            # === Case A: RHS is identifier or cast_expression ===
+            param_name = fa.resolved_value
+            # Prong 1: resolve via param_mappings (call-site arg propagation)
+            targets = param_mappings.get(param_name, set())
+            for t in targets:
+                dataflow.assign(f'<struct:{field_path}>', t)
+            # Prong 2: resolve via dataflow
+            df_targets = dataflow.resolve(param_name)
+            if not df_targets:
+                df_targets = dataflow.resolve(f'<garray:{param_name}>')
+            for t in df_targets:
+                dataflow.assign(f'<struct:{field_path}>', t)
+                dataflow.assign(f'<struct:{field_name}>', t)
+            # Prong 3: register for cross-function propagation
+            if hasattr(dataflow, 'register_param_mapping') and fa.enclosing_func in func_params:
+                params = func_params[fa.enclosing_func]
+                if param_name in params:
+                    param_idx = params.index(param_name)
+                    dataflow.register_param_mapping(
+                        fa.enclosing_func, param_idx, field_path
+                    )
 
     # === Pass 3: detect calls through function pointer parameters ===
     # When a call-site passes a function as arg N, and the callee calls that param,
