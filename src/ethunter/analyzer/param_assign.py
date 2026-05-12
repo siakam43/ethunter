@@ -14,6 +14,7 @@ from ethunter.graph.model import CallEdge, CallType
 from ethunter.analyzer.dataflow import VariableState
 from ethunter.analyzer.symbol_table import SymbolTable
 from ethunter.analyzer.helpers import find_enclosing_function, extract_field_path, collect_field_assignments
+import re
 
 REG_PATTERNS = [
     'register', 'callback', 'hook', 'attach', 'subscribe', 'set_', 'on_', 'add_',
@@ -87,6 +88,40 @@ def _has_fnptr_declarator(node) -> bool:
         if _has_fnptr_declarator(c):
             return True
     return False
+
+
+def _collect_simple_macros(tree) -> dict[str, tuple[str, list[str]]]:
+    """Collect function-wrapper macros: macro_name -> (real_func_name, [param_names]).
+
+    Only matches macros of the form: #define MACRO(a,b) real_func(a,b)
+    Skips constant macros, expression macros, and multi-statement macros.
+    """
+    macros: dict[str, tuple[str, list[str]]] = {}
+
+    def _scan(n) -> None:
+        if n.type == 'preproc_function_def':
+            name_node = None
+            body_text = None
+            param_idents = []
+            for child in n.children:
+                if child.type == 'identifier' and child.text and name_node is None:
+                    name_node = child
+                elif child.type == 'preproc_params':
+                    for pc in child.children:
+                        if pc.type == 'identifier' and pc.text:
+                            param_idents.append(pc.text.decode('utf-8'))
+                elif child.type == 'preproc_arg' and child.text:
+                    body_text = child.text.decode('utf-8')
+            if name_node and name_node.text and body_text:
+                macro_name = name_node.text.decode('utf-8')
+                func_match = re.match(r'\s*(\w+)\s*\(', body_text)
+                if func_match and func_match.group(1) != macro_name:
+                    macros[macro_name] = (func_match.group(1), param_idents)
+        for child in n.children:
+            _scan(child)
+
+    _scan(tree.root_node)
+    return macros
 
 
 def _collect_func_params(node, func_params: dict, func_fp_params: dict | None = None) -> None:
@@ -245,6 +280,9 @@ def analyze(
 
     _collect_func_params(tree.root_node, func_params, func_fp_params)
 
+    # Collect function-wrapper macros for call-site expansion
+    macros = _collect_simple_macros(tree)
+
     # Store func_fp_params in dataflow for field_call callback-of-callback handling
     if hasattr(dataflow, 'state'):
         dataflow.state.func_fp_params = func_fp_params
@@ -304,6 +342,13 @@ def analyze(
                 args = node.child_by_field_name('arguments')
                 if args:
                     caller = find_enclosing_function(node, tree.root_node)
+
+                    # Macro expansion: replace macro call with real function name
+                    if call_name not in func_params and call_name in macros:
+                        real_func, _ = macros[call_name]
+                        if real_func in func_params:
+                            call_name = real_func
+
                     param_names = func_params.get(call_name, [])
                     # Count commas to determine argument position
                     # args children: (, arg0, comma, arg1, comma, ..., )

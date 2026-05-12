@@ -937,3 +937,52 @@ def test_field_to_field_propagation():
     pairs = {(e.caller, e.callee) for e in graph.edges if e.type.value == 'indirect'}
     assert ('use_ctx', 'my_cb') in pairs, \
         f"Expected use_ctx -> my_cb, got: {pairs}"
+
+
+def test_macro_expansion_param_tracking():
+    """Macro wrapper call: #define MACRO(a,b) real(a,b) → param tracking works."""
+    import tree_sitter_c as tsc
+    from tree_sitter import Language, Parser
+
+    source = b'''
+    typedef void (*cb_fn)(int x);
+
+    static void my_handler(int x) { (void)x; }
+
+    static void register_callback_impl(void *ctx, cb_fn cb) {
+        ((struct ctx*)ctx)->handler = cb;
+    }
+
+    #define register_callback(ctx, fn) register_callback_impl((ctx), (fn))
+
+    struct ctx {
+        cb_fn handler;
+    };
+
+    void setup(void) {
+        struct ctx c;
+        register_callback(&c, my_handler);
+    }
+
+    void invoke(struct ctx *c) {
+        if (c->handler)
+            c->handler(42);
+    }
+    '''
+    lang = Language(tsc.language())
+    parser = Parser(lang)
+    tree = parser.parse(source)
+
+    from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
+    from ethunter.analyzer.dataflow import VariableState
+    from ethunter.analyzer.orchestrator import run_all_analyses
+
+    st = SymbolTable()
+    for func in extract_functions(tree, "test.c"):
+        st.add_function(func)
+    df = VariableState()
+
+    graph = run_all_analyses({"test.c": tree}, st, df)
+    pairs = {(e.caller, e.callee) for e in graph.edges if e.type.value == 'indirect'}
+    assert ('invoke', 'my_handler') in pairs, \
+        f"Expected invoke -> my_handler, got: {pairs}"
