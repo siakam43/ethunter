@@ -73,8 +73,7 @@ void channel_register_open_confirm(struct ssh *ssh, int id,
     void (*fn)(struct ssh *, int, u_int32_t, void *), void *ctx)
 {
     (void)ssh; (void)id;
-    Channel *c = NULL;
-    if (c == NULL) return;
+    Channel c_storage; Channel *c = &c_storage;
     c->open_confirm = fn;
     c->open_confirm_ctx = ctx;
 }
@@ -102,4 +101,12 @@ static void ssh_session2_setup(struct ssh *ssh, int id, u_int32_t seq, void *ctx
 /* Target 5: ssh tunnel confirm */
 static void ssh_tun_confirm(struct ssh *ssh, int id, u_int32_t seq, void *ctx) {
     (void)ssh; (void)id; (void)seq; (void)ctx;
+}
+
+void register_all_open_confirm(void) {
+    channel_register_open_confirm(((void *)0), 0, mux_session_confirm, ((void *)0));
+    channel_register_open_confirm(((void *)0), 1, mux_stdio_confirm, ((void *)0));
+    channel_register_open_confirm(((void *)0), 2, ssh_stdio_confirm, ((void *)0));
+    channel_register_open_confirm(((void *)0), 3, ssh_session2_setup, ((void *)0));
+    channel_register_open_confirm(((void *)0), 4, ssh_tun_confirm, ((void *)0));
 }

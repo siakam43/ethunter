@@ -19,8 +19,6 @@ struct Curl_easy {
     char *proxyuserpwd;
 };
 
-#define Curl_safefree(ptr) \
-    do { Curl_cfree((ptr)); (ptr) = NULL; } while(0)
 
 CURLcode Curl_output_digest(struct Curl_easy *data,
                             int proxy,
@@ -32,7 +30,7 @@ CURLcode Curl_output_digest(struct Curl_easy *data,
     char *passwdp = NULL;
     CURLcode result;
 
-    Curl_safefree(*allocuserpwd);
+    Curl_cfree(*allocuserpwd);
 
     if (!userp)
         userp = "";

@@ -82,3 +82,9 @@ static void close_state(lua_State *L) {
     global_State *g = G(L);
     lj_mem_free(g, g, sizeof(global_State));
 }
+
+/* Registration: bind lj_alloc_f as allocator */
+static void register_lj_alloc(void) {
+    lua_State *L = lua_newstate(lj_alloc_f, ((void *)0));
+    (void)L;
+}

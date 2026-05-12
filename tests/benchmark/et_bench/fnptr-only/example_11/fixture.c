@@ -15,7 +15,7 @@ void Curl_init_strdup(int use_builtin)
     if (use_builtin)
         Curl_cstrdup = Curl_strdup;
     else
-        Curl_cstrdup = strdup;
+        Curl_cstrdup = (curl_strdup_callback)strdup;
 }
 
 char *Curl_strdup(const char *str) {

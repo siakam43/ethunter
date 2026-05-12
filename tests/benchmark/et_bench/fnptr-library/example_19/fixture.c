@@ -43,8 +43,7 @@ void channel_register_filter(struct ssh *ssh, int id,
     void (*cfn)(void *), void *ctx)
 {
     (void)ssh; (void)id;
-    Channel *c = NULL;
-    if (c == NULL) return;
+    Channel c_storage; Channel *c = &c_storage;
     c->input_filter = ifn;
     c->output_filter = ofn;
     c->filter_ctx = ctx;
@@ -63,4 +62,8 @@ int client_loop(struct ssh *ssh, int have_pty, int escape_char_arg,
 {
     (void)ssh; (void)have_pty; (void)escape_char_arg; (void)ssh2_chan_id;
     return 0;
+}
+
+void register_output_filter(void) {
+    channel_register_filter(((void *)0), 0, ((void *)0), sys_tun_outfilter, ((void *)0), ((void *)0));
 }

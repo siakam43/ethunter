@@ -102,3 +102,18 @@ void trhash_dtor(void *user, void *ptr) { (void)user; free(ptr); }
 void sh_freeentry(void *user, void *ptr) { (void)user; free(ptr); }
 void curl_free(void *p) { free(p); }
 void gsasl_free(void *p) { free(p); }
+
+/* Registration: bind all dtor targets */
+void register_all_dtors(void) {
+    Curl_llist l1, l2, l3, l4, l5, l6;
+    Curl_llist_init(&l1, fileinfo_dtor);
+    Curl_llist_init(&l2, hash_element_dtor);
+    Curl_llist_init(&l3, free_bundle_hash_entry);
+    Curl_llist_init(&l4, freednsentry);
+    Curl_llist_init(&l5, trhash_dtor);
+    Curl_llist_init(&l6, sh_freeentry);
+    Curl_hash h1, h2;
+    Curl_hash_init(&h1, 16, ((void *)0), ((void *)0), (Curl_hash_dtor)curl_free);
+    Curl_hash_init(&h2, 16, ((void *)0), ((void *)0), (Curl_hash_dtor)gsasl_free);
+    (void)h1; (void)h2;
+}

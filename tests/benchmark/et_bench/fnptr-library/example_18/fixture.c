@@ -94,3 +94,10 @@ static int key_print_wrapper(sshkey *hostkey, ssh *ssh_ctx)
     (void)hostkey; (void)ssh_ctx;
     return -1;
 }
+
+/* Registration: bind key_print_wrapper as verify_host_key callback */
+void register_key_print_wrapper(void) {
+    ssh *s;
+    ssh_init(&s, 0, ((void *)0));
+    ssh_set_verify_host_key_callback(s, key_print_wrapper);
+}

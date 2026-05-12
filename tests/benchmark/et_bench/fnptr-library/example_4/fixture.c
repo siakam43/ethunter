@@ -34,8 +34,7 @@ void channel_register_filter(struct ssh *ssh, int id,
     void (*cfn)(void *), void *ctx)
 {
     (void)ssh; (void)id;
-    Channel *c = (Channel *)0; /* simplified lookup */
-    if (c == NULL) return;
+    Channel c_storage; Channel *c = &c_storage;
     c->input_filter = ifn;
     c->output_filter = ofn;
     c->filter_ctx = ctx;
@@ -60,4 +59,9 @@ void client_filter_cleanup(void *ctx) { (void)ctx; }
 void *client_new_escape_filter_ctx(int escape_char) {
     (void)escape_char;
     return NULL;
+}
+
+void register_all_filters(void) {
+    channel_register_filter(((void *)0), 0, client_simple_escape_filter, ((void *)0), ((void *)0), ((void *)0));
+    channel_register_filter(((void *)0), 1, sys_tun_infilter, ((void *)0), ((void *)0), ((void *)0));
 }
