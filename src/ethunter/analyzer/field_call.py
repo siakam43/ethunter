@@ -175,6 +175,16 @@ def analyze(
                             for key, vals in dataflow.targets.items():
                                 if key.endswith(f'.{last_part}>') and vals:
                                     targets.update(vals)
+                    # Fallback: parameter-to-global-array binding (Fix B)
+                    if not targets and '.' in field_path:
+                        base_name = field_path.split('.')[0]
+                        enclosing_func = find_enclosing_function(node, tree.root_node)
+                        if enclosing_func and hasattr(dataflow, 'param_alias_map'):
+                            alias_key = (enclosing_func, base_name)
+                            if alias_key in dataflow.param_alias_map:
+                                global_name = dataflow.param_alias_map[alias_key]
+                                field_suffix = '.'.join(field_path.split('.')[1:])
+                                targets = dataflow.resolve(f'<gstruct:{global_name}.{field_suffix}>')
                     # Fallback: pointer alias resolution (Fix A)
                     if not targets and '.' in field_path:
                         base_name = field_path.split('.')[0]

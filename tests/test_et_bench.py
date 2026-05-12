@@ -355,3 +355,55 @@ def test_fix_a_collect_pointer_resolutions():
     assert 'p2' in resolutions, f"p2 not found in {resolutions}"
     assert resolutions['p2'] == 'ops_array', f"p2 -> {resolutions.get('p2')}"
     assert 'p3' not in resolutions, f"p3 should not resolve (parenthesized, not field_expr)"
+
+
+def test_fix_b_param_alias_registration():
+    """Fix B: param_alias_map is populated when caller passes global array arg."""
+    import tree_sitter_c as tsc
+    from tree_sitter import Language, Parser
+
+    source = b'''
+    typedef void (*cb_fn)(void);
+
+    struct item {
+        const char *label;
+        int pri;
+        cb_fn handler;
+    };
+
+    static void my_handler(void) {}
+
+    static const struct item items[] = {
+        {"test", 0, my_handler},
+    };
+
+    void process(const struct item list[]) {
+        if (list[0].handler)
+            list[0].handler();
+    }
+
+    void bootstrap(void) {
+        process(items);
+    }
+    '''
+    lang = Language(tsc.language())
+    parser = Parser(lang)
+    tree = parser.parse(source)
+
+    from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
+    from ethunter.analyzer.dataflow import VariableState, DataflowEngine
+    from ethunter.analyzer import initializer_assign
+
+    st = SymbolTable()
+    for func in extract_functions(tree, "test.c"):
+        st.add_function(func)
+    engine = DataflowEngine(state=VariableState())
+
+    initializer_assign.analyze(tree=tree, filepath="test.c", symbol_table=st, dataflow=engine)
+
+    # After Fix B: param_alias_map should have (process, list) -> items
+    assert hasattr(engine, 'param_alias_map'), "param_alias_map not set on engine"
+    assert ('process', 'list') in engine.param_alias_map, \
+        f"Expected (process, list) in param_alias_map, got: {engine.param_alias_map}"
+    assert engine.param_alias_map[('process', 'list')] == 'items', \
+        f"Expected items, got: {engine.param_alias_map.get(('process', 'list'))}"

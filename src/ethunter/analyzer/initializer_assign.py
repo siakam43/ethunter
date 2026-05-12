@@ -325,6 +325,38 @@ def analyze(
 
         _collect_call_params(tree.root_node)
 
+        # Fix B: register param->global array bindings
+        def _register_param_global_aliases(node: ts.Node) -> None:
+            if node.type == 'call_expression':
+                func_node = node.child_by_field_name('function') or node.children[0]
+                if func_node and func_node.text:
+                    callee = func_node.text.decode('utf-8')
+                    if callee in func_params:
+                        args = node.child_by_field_name('arguments')
+                        if args:
+                            param_names = func_params[callee]
+                            arg_idx = 0
+                            for c in args.children:
+                                if c.type in ('(', ')', ','):
+                                    continue
+                                if c.type == 'identifier' and c.text:
+                                    arg_name = c.text.decode('utf-8')
+                                    has_gstruct = any(
+                                        k.startswith(f'<gstruct:{arg_name}.') and bool(v)
+                                        for k, v in dataflow.targets.items()
+                                    )
+                                    has_garray = bool(dataflow.resolve(f'<garray:{arg_name}>'))
+                                    if (has_gstruct or has_garray) and arg_idx < len(param_names):
+                                        pname = param_names[arg_idx]
+                                        if not hasattr(dataflow, 'param_alias_map'):
+                                            dataflow.param_alias_map = {}
+                                        dataflow.param_alias_map[(callee, pname)] = arg_name
+                                arg_idx += 1
+            for child in node.children:
+                _register_param_global_aliases(child)
+
+        _register_param_global_aliases(tree.root_node)
+
         def _visit(n: ts.Node) -> None:
             if n.type == 'assignment_expression':
                 lhs = n.child_by_field_name('left') or (n.children[0] if n.children else None)
