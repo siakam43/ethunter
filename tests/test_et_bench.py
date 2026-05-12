@@ -879,3 +879,61 @@ def test_local_fp_from_struct_field_init():
     pairs = {(e.caller, e.callee) for e in graph.edges if e.type.value == 'indirect'}
     assert ('release_sync', 'my_hold') in pairs, \
         f"Expected release_sync -> my_hold, got: {pairs}"
+
+
+def test_field_to_field_propagation():
+    """Phase 5: a->fp = b->fp field-to-field fnptr propagation."""
+    import tree_sitter_c as tsc
+    from tree_sitter import Language, Parser
+
+    source = b'''
+    typedef void (*cb_fn)(int x);
+
+    static void my_cb(int x) { (void)x; }
+
+    struct store {
+        cb_fn callback;
+    };
+
+    struct ctx {
+        cb_fn callback;
+    };
+
+    static void store_set_cb(struct store *s, cb_fn cb) {
+        s->callback = cb;
+    }
+
+    static void ctx_init(struct ctx *c, struct store *s) {
+        c->callback = s->callback;
+    }
+
+    void use_ctx(struct ctx *c) {
+        if (c->callback)
+            c->callback(42);
+    }
+
+    void main_func(void) {
+        struct store s;
+        struct ctx c;
+        store_set_cb(&s, my_cb);
+        ctx_init(&c, &s);
+        use_ctx(&c);
+    }
+    '''
+    lang = Language(tsc.language())
+    parser = Parser(lang)
+    tree = parser.parse(source)
+
+    from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
+    from ethunter.analyzer.dataflow import VariableState
+    from ethunter.analyzer.orchestrator import run_all_analyses
+
+    st = SymbolTable()
+    for func in extract_functions(tree, "test.c"):
+        st.add_function(func)
+    df = VariableState()
+
+    graph = run_all_analyses({"test.c": tree}, st, df)
+    pairs = {(e.caller, e.callee) for e in graph.edges if e.type.value == 'indirect'}
+    assert ('use_ctx', 'my_cb') in pairs, \
+        f"Expected use_ctx -> my_cb, got: {pairs}"

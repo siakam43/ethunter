@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "lastScanned": 1778160137353,
+  "lastScanned": 1778547758297,
   "projectRoot": "/home/admin/cc/wksp/ethunter",
   "techStack": {
     "languages": [
@@ -40,6 +40,7 @@
     "isMonorepo": false,
     "workspaces": [],
     "mainDirectories": [
+      "docs",
       "src",
       "tests"
     ],
@@ -47,334 +48,344 @@
   },
   "customNotes": [],
   "directoryMap": {
-    "benchmarks": {
-      "path": "benchmarks",
-      "purpose": null,
+    "docs": {
+      "path": "docs",
+      "purpose": "Documentation",
       "fileCount": 0,
-      "lastAccessed": 1778160137201,
+      "lastAccessed": 1778547757992,
       "keyFiles": []
     },
     "src": {
       "path": "src",
       "purpose": "Source code",
       "fileCount": 0,
-      "lastAccessed": 1778160137224,
+      "lastAccessed": 1778547758008,
       "keyFiles": []
     },
     "tests": {
       "path": "tests",
       "purpose": "Test files",
-      "fileCount": 0,
-      "lastAccessed": 1778160137249,
-      "keyFiles": []
+      "fileCount": 7,
+      "lastAccessed": 1778547758080,
+      "keyFiles": [
+        "test_analyzers.py",
+        "test_benchmark.py",
+        "test_cross_file.py",
+        "test_dataflow_engine.py",
+        "test_et_bench.py"
+      ]
     },
     "tests/fixtures": {
       "path": "tests/fixtures",
       "purpose": "Test fixtures",
-      "fileCount": 0,
-      "lastAccessed": 1778160137273,
-      "keyFiles": []
+      "fileCount": 41,
+      "lastAccessed": 1778547758160,
+      "keyFiles": [
+        "callback_param.c",
+        "callback_param_complex.c",
+        "callback_reg.c"
+      ]
     }
   },
   "hotPaths": [
     {
-      "path": "src/ethunter/cli.py",
-      "accessCount": 33,
-      "lastAccessed": 1778227984320,
+      "path": "tests/benchmark/cg_bench/fnptr-varargs/example_1/fixture.c",
+      "accessCount": 16,
+      "lastAccessed": 1778398646902,
       "type": "file"
     },
     {
-      "path": "src/ethunter/analyzer/fp_alias.py",
-      "accessCount": 10,
-      "lastAccessed": 1778202787333,
+      "path": "tests/benchmark/cg_bench/fnptr-callback/example_14/fixture.c",
+      "accessCount": 11,
+      "lastAccessed": 1778391837506,
       "type": "file"
     },
     {
-      "path": "src/ethunter/graph/model.py",
-      "accessCount": 10,
-      "lastAccessed": 1778222317526,
-      "type": "file"
-    },
-    {
-      "path": "src/ethunter/analyzer/fp_assign.py",
-      "accessCount": 9,
-      "lastAccessed": 1778170361782,
-      "type": "file"
-    },
-    {
-      "path": "src/ethunter/analyzer/orchestrator.py",
-      "accessCount": 9,
-      "lastAccessed": 1778202733210,
-      "type": "file"
-    },
-    {
-      "path": "tests/test_analyzers.py",
-      "accessCount": 9,
-      "lastAccessed": 1778223540474,
-      "type": "file"
-    },
-    {
-      "path": "src/ethunter/parser/scanner.py",
+      "path": "tests/benchmark/cg_bench/fnptr-callback/example_6/fixture.c",
       "accessCount": 6,
-      "lastAccessed": 1778210036546,
+      "lastAccessed": 1778391770261,
       "type": "file"
     },
     {
-      "path": "src/ethunter/analyzer/callback_reg.py",
+      "path": "tests/test_cg_bench.py",
+      "accessCount": 6,
+      "lastAccessed": 1778416226121,
+      "type": "file"
+    },
+    {
+      "path": "tests/benchmark/cg_bench/fnptr-virtual/example_1/ground_truth.json",
       "accessCount": 5,
-      "lastAccessed": 1778166342016,
+      "lastAccessed": 1778398654622,
       "type": "file"
     },
     {
-      "path": "src/ethunter/output/dot_output.py",
-      "accessCount": 5,
-      "lastAccessed": 1778205442281,
-      "type": "file"
-    },
-    {
-      "path": "pyproject.toml",
-      "accessCount": 5,
-      "lastAccessed": 1778205773164,
-      "type": "file"
-    },
-    {
-      "path": "src/ethunter/output/json_output.py",
-      "accessCount": 5,
-      "lastAccessed": 1778223557028,
-      "type": "file"
-    },
-    {
-      "path": "src/ethunter/analyzer/vtable.py",
+      "path": "tests/benchmark/cg_bench/fnptr-varargs/example_1/ground_truth.json",
       "accessCount": 4,
-      "lastAccessed": 1778166349457,
+      "lastAccessed": 1778398648008,
       "type": "file"
     },
     {
-      "path": "src/ethunter/analyzer/symbol_table.py",
+      "path": "tests/benchmark/cg_bench/fnptr-virtual/example_1/fixture.c",
       "accessCount": 4,
-      "lastAccessed": 1778166454317,
+      "lastAccessed": 1778398655059,
       "type": "file"
     },
     {
-      "path": "src/ethunter/analyzer/direct_call.py",
-      "accessCount": 4,
-      "lastAccessed": 1778202791157,
-      "type": "file"
-    },
-    {
-      "path": "src/ethunter/query/engine.py",
-      "accessCount": 4,
-      "lastAccessed": 1778204649683,
-      "type": "file"
-    },
-    {
-      "path": "src/ethunter/analyzer/union_fp.py",
-      "accessCount": 3,
-      "lastAccessed": 1778166371436,
-      "type": "file"
-    },
-    {
-      "path": "src/ethunter/analyzer/fp_return.py",
-      "accessCount": 3,
-      "lastAccessed": 1778168168798,
-      "type": "file"
-    },
-    {
-      "path": "src/ethunter/analyzer/lazy_init.py",
-      "accessCount": 3,
-      "lastAccessed": 1778168347494,
-      "type": "file"
-    },
-    {
-      "path": "src/ethunter/analyzer/macro_fp.py",
+      "path": "docs/superpowers/plans/2026-05-09-cg-bench-fixture-repair.md",
       "accessCount": 2,
-      "lastAccessed": 1778164343549,
+      "lastAccessed": 1778341938916,
       "type": "file"
     },
     {
-      "path": "src/ethunter/analyzer/fp_array.py",
+      "path": "tests/benchmark/cg_bench/fnptr-cast/example_1/fixture.c",
       "accessCount": 2,
-      "lastAccessed": 1778166344114,
+      "lastAccessed": 1778391693569,
       "type": "file"
     },
     {
-      "path": "src/ethunter/analyzer/callback_param.py",
+      "path": "tests/benchmark/cg_bench/fnptr-cast/example_1/ground_truth.json",
       "accessCount": 2,
-      "lastAccessed": 1778166347527,
+      "lastAccessed": 1778391700799,
       "type": "file"
     },
     {
-      "path": "src/ethunter/analyzer/typedef_fp.py",
+      "path": "tests/benchmark/cg_bench/fnptr-callback/example_6/ground_truth.json",
       "accessCount": 2,
-      "lastAccessed": 1778166368796,
+      "lastAccessed": 1778391775099,
       "type": "file"
     },
     {
-      "path": "src/ethunter/analyzer/dataflow.py",
+      "path": "tests/benchmark/cg_bench/fnptr-callback/example_14/ground_truth.json",
       "accessCount": 2,
-      "lastAccessed": 1778166453889,
+      "lastAccessed": 1778391835472,
       "type": "file"
     },
     {
-      "path": "tests/fixtures/fp_alias.c",
+      "path": "tests/benchmark/cg_bench/fnptr-dynamic-call/example_1/fixture.c",
       "accessCount": 2,
-      "lastAccessed": 1778167465779,
+      "lastAccessed": 1778398663015,
       "type": "file"
     },
     {
-      "path": "tests/fixtures/fp_alias_complex.c",
+      "path": "tests/benchmark/cg_bench/fnptr-dynamic-call/example_2/fixture.c",
       "accessCount": 2,
-      "lastAccessed": 1778167485968,
+      "lastAccessed": 1778398665116,
       "type": "file"
     },
     {
-      "path": "src/ethunter/analyzer/base.py",
+      "path": "tests/benchmark/cg_bench/fnptr-dynamic-call/example_3/fixture.c",
       "accessCount": 2,
-      "lastAccessed": 1778202734596,
+      "lastAccessed": 1778398665561,
       "type": "file"
     },
     {
-      "path": "src/ethunter/parser/preprocessor.py",
+      "path": "tests/benchmark/cg_bench/fnptr-dynamic-call/example_4/fixture.c",
       "accessCount": 2,
-      "lastAccessed": 1778202773786,
+      "lastAccessed": 1778398666144,
       "type": "file"
     },
     {
-      "path": "src/ethunter/analyzer/dlsym_fp.py",
-      "accessCount": 1,
-      "lastAccessed": 1778161853640,
+      "path": "tests/benchmark/cg_bench/fnptr-dynamic-call/example_5/fixture.c",
+      "accessCount": 2,
+      "lastAccessed": 1778398667333,
       "type": "file"
     },
     {
-      "path": "tests/fixtures/direct_call.c",
-      "accessCount": 1,
-      "lastAccessed": 1778161991980,
+      "path": "tests/benchmark/cg_bench/fnptr-only/example_8/ground_truth.json",
+      "accessCount": 2,
+      "lastAccessed": 1778412425174,
       "type": "file"
     },
     {
-      "path": "tests/fixtures/fp_assign.c",
+      "path": "tests/benchmark/CG-Bench/fnptr-callback.md",
       "accessCount": 1,
-      "lastAccessed": 1778162015713,
+      "lastAccessed": 1778341596377,
       "type": "file"
     },
     {
-      "path": "prd.json",
+      "path": "tests/benchmark/CG-Bench/fnptr-virtual.md",
       "accessCount": 1,
-      "lastAccessed": 1778163249252,
+      "lastAccessed": 1778342538028,
       "type": "file"
     },
     {
-      "path": "tests/fixtures/vtable.c",
+      "path": "tests/benchmark/cg_bench/fnptr-only/example_1/fixture.c",
       "accessCount": 1,
-      "lastAccessed": 1778166404644,
+      "lastAccessed": 1778391688130,
       "type": "file"
     },
     {
-      "path": "tests/fixtures/callback_param.c",
+      "path": "tests/benchmark/cg_bench/fnptr-only/example_3/fixture.c",
       "accessCount": 1,
-      "lastAccessed": 1778166409022,
+      "lastAccessed": 1778391688375,
       "type": "file"
     },
     {
-      "path": "tests/fixtures/typedef_fp.c",
+      "path": "tests/benchmark/cg_bench/fnptr-only/example_2/ground_truth.json",
       "accessCount": 1,
-      "lastAccessed": 1778166436258,
+      "lastAccessed": 1778391688938,
       "type": "file"
     },
     {
-      "path": "tests/fixtures/dlsym_fp.c",
+      "path": "tests/benchmark/cg_bench/fnptr-only/example_3/ground_truth.json",
       "accessCount": 1,
-      "lastAccessed": 1778166438264,
+      "lastAccessed": 1778391689531,
       "type": "file"
     },
     {
-      "path": "tests/fixtures/lazy_init.c",
+      "path": "tests/benchmark/cg_bench/fnptr-only/example_2/fixture.c",
       "accessCount": 1,
-      "lastAccessed": 1778166438413,
+      "lastAccessed": 1778391690093,
       "type": "file"
     },
     {
-      "path": "tests/fixtures/macro_fp.c",
+      "path": "tests/benchmark/cg_bench/fnptr-only/example_4/fixture.c",
       "accessCount": 1,
-      "lastAccessed": 1778166438908,
+      "lastAccessed": 1778391690506,
       "type": "file"
     },
     {
-      "path": "src/ethunter/analyzer/__init__.py",
+      "path": "tests/benchmark/cg_bench/fnptr-only/example_4/ground_truth.json",
       "accessCount": 1,
-      "lastAccessed": 1778166503478,
+      "lastAccessed": 1778391692752,
       "type": "file"
     },
     {
-      "path": "tests/fixtures/direct_call_complex.c",
+      "path": "tests/benchmark/cg_bench/fnptr-only/example_1/ground_truth.json",
       "accessCount": 1,
-      "lastAccessed": 1778167119496,
+      "lastAccessed": 1778391692925,
       "type": "file"
     },
     {
-      "path": "tests/fixtures/fp_assign_complex.c",
+      "path": "tests/benchmark/cg_bench/fnptr-cast/example_2/fixture.c",
       "accessCount": 1,
-      "lastAccessed": 1778167141937,
+      "lastAccessed": 1778391705634,
       "type": "file"
     },
     {
-      "path": "tests/fixtures/callback_param_complex.c",
+      "path": "tests/benchmark/cg_bench/fnptr-cast/example_2/ground_truth.json",
       "accessCount": 1,
-      "lastAccessed": 1778167160225,
+      "lastAccessed": 1778391711054,
       "type": "file"
     },
     {
-      "path": "tests/fixtures/fp_return_complex.c",
+      "path": "tests/benchmark/cg_bench/fnptr-only/example_5/fixture.c",
       "accessCount": 1,
-      "lastAccessed": 1778167188968,
+      "lastAccessed": 1778391715547,
       "type": "file"
     },
     {
-      "path": "tests/fixtures/fp_array_complex.c",
+      "path": "tests/benchmark/cg_bench/fnptr-only/example_7/fixture.c",
       "accessCount": 1,
-      "lastAccessed": 1778167204274,
+      "lastAccessed": 1778391715947,
       "type": "file"
     },
     {
-      "path": "tests/fixtures/vtable_complex.c",
+      "path": "tests/benchmark/cg_bench/fnptr-only/example_8/fixture.c",
       "accessCount": 1,
-      "lastAccessed": 1778167223255,
+      "lastAccessed": 1778391716640,
       "type": "file"
     },
     {
-      "path": "tests/fixtures/callback_reg_complex.c",
+      "path": "tests/benchmark/cg_bench/fnptr-only/example_6/fixture.c",
       "accessCount": 1,
-      "lastAccessed": 1778167246364,
+      "lastAccessed": 1778391717033,
       "type": "file"
     },
     {
-      "path": "tests/fixtures/union_fp_complex.c",
+      "path": "tests/benchmark/cg_bench/fnptr-callback/example_3/ground_truth.json",
       "accessCount": 1,
-      "lastAccessed": 1778167263662,
+      "lastAccessed": 1778391718225,
       "type": "file"
     },
     {
-      "path": "tests/fixtures/typedef_fp_complex.c",
+      "path": "tests/benchmark/cg_bench/fnptr-callback/example_3/fixture.c",
       "accessCount": 1,
-      "lastAccessed": 1778167281455,
+      "lastAccessed": 1778391718605,
       "type": "file"
     },
     {
-      "path": "tests/fixtures/lazy_init_complex.c",
+      "path": "tests/benchmark/cg_bench/fnptr-callback/example_2/ground_truth.json",
       "accessCount": 1,
-      "lastAccessed": 1778167314722,
+      "lastAccessed": 1778391719474,
       "type": "file"
     },
     {
-      "path": "tests/fixtures/macro_fp_complex.c",
+      "path": "tests/benchmark/cg_bench/fnptr-callback/example_1/fixture.c",
       "accessCount": 1,
-      "lastAccessed": 1778167331793,
+      "lastAccessed": 1778391720787,
       "type": "file"
     },
     {
-      "path": "tests/fixtures/dlsym_fp_complex.c",
+      "path": "tests/benchmark/cg_bench/fnptr-only/example_7/ground_truth.json",
       "accessCount": 1,
-      "lastAccessed": 1778167348307,
+      "lastAccessed": 1778391722312,
+      "type": "file"
+    },
+    {
+      "path": "tests/benchmark/cg_bench/fnptr-only/example_5/ground_truth.json",
+      "accessCount": 1,
+      "lastAccessed": 1778391722740,
+      "type": "file"
+    },
+    {
+      "path": "tests/benchmark/cg_bench/fnptr-only/example_6/ground_truth.json",
+      "accessCount": 1,
+      "lastAccessed": 1778391723233,
+      "type": "file"
+    },
+    {
+      "path": "tests/benchmark/cg_bench/fnptr-callback/example_1/ground_truth.json",
+      "accessCount": 1,
+      "lastAccessed": 1778391723450,
+      "type": "file"
+    },
+    {
+      "path": "tests/benchmark/cg_bench/fnptr-callback/example_2/fixture.c",
+      "accessCount": 1,
+      "lastAccessed": 1778391723747,
+      "type": "file"
+    },
+    {
+      "path": "tests/benchmark/cg_bench/fnptr-global-array/example_4/ground_truth.json",
+      "accessCount": 1,
+      "lastAccessed": 1778391733344,
+      "type": "file"
+    },
+    {
+      "path": "tests/benchmark/cg_bench/fnptr-global-array/example_1/fixture.c",
+      "accessCount": 1,
+      "lastAccessed": 1778391733738,
+      "type": "file"
+    },
+    {
+      "path": "tests/benchmark/cg_bench/fnptr-global-array/example_2/fixture.c",
+      "accessCount": 1,
+      "lastAccessed": 1778391734183,
+      "type": "file"
+    },
+    {
+      "path": "tests/benchmark/cg_bench/fnptr-global-array/example_3/fixture.c",
+      "accessCount": 1,
+      "lastAccessed": 1778391734857,
+      "type": "file"
+    },
+    {
+      "path": "tests/benchmark/cg_bench/fnptr-global-array/example_3/ground_truth.json",
+      "accessCount": 1,
+      "lastAccessed": 1778391735571,
+      "type": "file"
+    },
+    {
+      "path": "tests/benchmark/cg_bench/fnptr-global-array/example_4/fixture.c",
+      "accessCount": 1,
+      "lastAccessed": 1778391735963,
+      "type": "file"
+    },
+    {
+      "path": "tests/benchmark/cg_bench/fnptr-global-array/example_2/ground_truth.json",
+      "accessCount": 1,
+      "lastAccessed": 1778391736920,
       "type": "file"
     }
   ],

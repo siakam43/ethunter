@@ -531,6 +531,17 @@ def analyze(
                                         key = (caller or '<unknown>', t)
                                         if key not in call_targets:
                                             call_targets[key] = (filepath, node.start_point[0] + 1)
+                            elif arg_idx < len(param_names):
+                                # Fallback: check dataflow for local var assigned to fnptr
+                                df_targets = dataflow.resolve(target)
+                                pname = param_names[arg_idx]
+                                mappings = param_mappings.get(pname, set())
+                                if df_targets or mappings:
+                                    keys_source = df_targets | mappings
+                                    for t in keys_source:
+                                        key = (caller or '<unknown>', t)
+                                        if key not in call_targets:
+                                            call_targets[key] = (filepath, node.start_point[0] + 1)
                         elif c.type == 'pointer_expression' and c.children:
                             inner = c.children[-1]
                             if inner.type == 'identifier' and inner.text:

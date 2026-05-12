@@ -2,40 +2,123 @@
   "stories": [
     {
       "id": "US-001",
-      "title": "Refactor CLI argparse: replace positional project_dir with --analyze, add mutual exclusion",
+      "title": "Run tree-sitter parsing check on all 104 fixtures",
+      "description": "Script iterates all 104 fixture.c files under tests/benchmark/cg_bench/, checks both exception-free parsing AND tree.root_node.has_error, stores results in shared memory.",
+      "priority": 1,
+      "passes": true,
       "acceptanceCriteria": [
-        "Positional project_dir argument removed from argparse",
-        "--analyze DIR flag added as replacement",
-        "--analyze and --from-json are mutually exclusive (error + exit 1 if both used)",
-        "ethunter --analyze /path/to/project produces JSON output",
-        "ethunter --from-json graph.json --find-entry works",
-        "ethunter --from-json graph.json --query NAME works",
-        "ethunter --from-json graph.json --to-dot works",
-        "--query/--to-dot/--find-entry without --from-json produces error + exit 1",
-        "-o flag works with both --analyze and --from-json modes"
-      ],
-      "passes": false
+        "Script iterates all 104 fixture.c files under tests/benchmark/cg_bench/",
+        "Each file is parsed via ethunter.parser.ast_builder.parse_file",
+        "Results check both exception-free parsing AND tree.root_node.has_error",
+        "Results stored in shared memory with per-fixture PASS/FAIL status",
+        "Parsing summary printed to console"
+      ]
     },
     {
       "id": "US-002",
-      "title": "Update all existing tests to use new CLI interface",
+      "title": "Parallel LLM analysis - Agent group 1 (fnptr-library + fnptr-varargs)",
+      "description": "LLM reads and manually analyzes all 21 fixtures in fnptr-library and fnptr-varargs categories.",
+      "priority": 2,
+      "passes": true,
       "acceptanceCriteria": [
-        "test_query_json.py updated: all subprocess CLI calls use --analyze instead of positional arg",
-        "All existing tests pass (no regressions)",
-        "New tests for --analyze/--from-json mutual exclusion",
-        "New tests for --query/--to-dot/--find-entry requiring --from-json"
-      ],
-      "passes": false
+        "All 20 fnptr-library examples analyzed with per-example verdict",
+        "All 1 fnptr-varargs example analyzed with per-example verdict",
+        "Each analysis includes: syntax check result, comment header verification, forward check, backward check",
+        "Results stored in shared memory (key: cg_bench_result_{category})",
+        "Output follows the per-fixture analysis template from plan"
+      ]
     },
     {
       "id": "US-003",
-      "title": "Update CLAUDE.md with new CLI usage examples",
+      "title": "Parallel LLM analysis - Agent group 2 (fnptr-struct)",
+      "description": "LLM reads and manually analyzes all 14 fixtures in fnptr-struct category.",
+      "priority": 2,
+      "passes": true,
       "acceptanceCriteria": [
-        "CLAUDE.md Commands section updated with --analyze syntax",
-        "CLAUDE.md reflects --query/--to-dot/--find-entry only work with --from-json",
-        "Old positional project_dir examples removed"
-      ],
-      "passes": false
+        "All 14 fnptr-struct examples analyzed with per-example verdict",
+        "Each analysis includes: syntax check result, comment header verification, forward check, backward check",
+        "Results stored in shared memory (key: cg_bench_result_fnptr-struct)",
+        "Output follows the per-fixture analysis template from plan"
+      ]
+    },
+    {
+      "id": "US-004",
+      "title": "Parallel LLM analysis - Agent group 3 (fnptr-only + fnptr-virtual)",
+      "description": "LLM reads and manually analyzes all 13 fixtures in fnptr-only (12) and fnptr-virtual (1) categories.",
+      "priority": 2,
+      "passes": true,
+      "acceptanceCriteria": [
+        "All 12 fnptr-only examples analyzed with per-example verdict",
+        "All 1 fnptr-virtual example analyzed with per-example verdict",
+        "Each analysis includes: syntax check result, comment header verification, forward check, backward check",
+        "Results stored in shared memory",
+        "Output follows the per-fixture analysis template from plan"
+      ]
+    },
+    {
+      "id": "US-005",
+      "title": "Parallel LLM analysis - Agent group 4 (fnptr-global-struct-array)",
+      "description": "LLM reads and manually analyzes all 12 fixtures in fnptr-global-struct-array category.",
+      "priority": 2,
+      "passes": true,
+      "acceptanceCriteria": [
+        "All 12 fnptr-global-struct-array examples analyzed with per-example verdict",
+        "Each analysis includes: syntax check result, comment header verification, forward check, backward check",
+        "Results stored in shared memory",
+        "Output follows the per-fixture analysis template from plan"
+      ]
+    },
+    {
+      "id": "US-006",
+      "title": "Parallel LLM analysis - Agent group 5 (fnptr-callback)",
+      "description": "LLM reads and manually analyzes all 15 fixtures in fnptr-callback category.",
+      "priority": 2,
+      "passes": true,
+      "acceptanceCriteria": [
+        "All 15 fnptr-callback examples analyzed with per-example verdict",
+        "Each analysis includes: syntax check result, comment header verification, forward check, backward check",
+        "Results stored in shared memory",
+        "Output follows the per-fixture analysis template from plan"
+      ]
+    },
+    {
+      "id": "US-007",
+      "title": "Parallel LLM analysis - Agent group 6 (fnptr-global-struct + fnptr-global-array + fnptr-cast + fnptr-dynamic-call)",
+      "description": "LLM reads and manually analyzes all 29 fixtures across 4 categories.",
+      "priority": 2,
+      "passes": true,
+      "acceptanceCriteria": [
+        "All 29 examples analyzed with per-example verdict",
+        "Each analysis includes: syntax check result, comment header verification, forward check, backward check",
+        "Results stored in shared memory for each category",
+        "Output follows the per-fixture analysis template from plan"
+      ]
+    },
+    {
+      "id": "US-008",
+      "title": "Compile final consolidated report",
+      "description": "Read all agent results from shared memory and compile a single markdown report covering all 104 fixtures organized by category.",
+      "priority": 3,
+      "passes": true,
+      "acceptanceCriteria": [
+        "Report file exists at tests/benchmark/cg_bench/correctness-report.md",
+        "Report contains all 11 categories",
+        "Report covers all 104 fixtures",
+        "Report has Summary section with PASS/FAIL counts",
+        "Each fixture entry follows the analysis template (syntax, comment, forward, backward, verdict, issues)"
+      ]
+    },
+    {
+      "id": "US-009",
+      "title": "Verify report quality via spot-check",
+      "description": "Randomly spot-check 3 fixtures from different categories to verify analysis quality matches actual code and ground truth.",
+      "priority": 4,
+      "passes": true,
+      "acceptanceCriteria": [
+        "3 fixtures spot-checked from 3 different categories (fnptr-callback/example_1, fnptr-struct/example_1, fnptr-only/example_10)",
+        "Spot-check confirms report findings match actual code analysis",
+        "No major discrepancies found between report and reality"
+      ]
     }
   ]
 }
