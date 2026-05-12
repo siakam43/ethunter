@@ -531,6 +531,18 @@ def analyze(
                                         key = (caller or '<unknown>', t)
                                         if key not in call_targets:
                                             call_targets[key] = (filepath, node.start_point[0] + 1)
+                        elif c.type == 'pointer_expression' and c.children:
+                            inner = c.children[-1]
+                            if inner.type == 'identifier' and inner.text:
+                                target = inner.text.decode('utf-8')
+                                if target in symbol_names and arg_idx < len(param_names):
+                                    pname = param_names[arg_idx]
+                                    targets = param_mappings.get(pname)
+                                    if targets:
+                                        for t in targets:
+                                            key = (caller or '<unknown>', t)
+                                            if key not in call_targets:
+                                                call_targets[key] = (filepath, node.start_point[0] + 1)
                         arg_idx += 1
         for child in node.children:
             _collect_call_args_pass4(child)
