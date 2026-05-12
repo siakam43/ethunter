@@ -84,11 +84,15 @@ def test_et_bench_report():
     results = {}
     total_matched = 0
     total_expected = 0
+    total_extra = 0
+    total_detected = 0
 
     for category in categories:
         examples = _get_examples(category)
         cat_matched = 0
         cat_expected = 0
+        cat_extra = 0
+        cat_detected = 0
 
         for example in examples:
             example_dir = os.path.join(ET_BENCH_DIR, category, example)
@@ -100,28 +104,42 @@ def test_et_bench_report():
 
             graph = _run_analysis_on_fixture(example_dir)
             indirect_edges = [e for e in graph.edges if e.type.value == 'indirect']
-            _, matched = compute_recall(indirect_edges, example_edges)
-            cat_matched += len(matched)
+            found_pairs = {(e.caller, e.callee) for e in indirect_edges}
+            expected_pairs = {(e['caller'], e['callee']) for e in example_edges}
+
+            matched_pairs = found_pairs & expected_pairs
+            extra_pairs = found_pairs - expected_pairs
+
+            cat_matched += len(matched_pairs)
+            cat_extra += len(extra_pairs)
+            cat_detected += len(found_pairs)
 
         cat_recall = cat_matched / cat_expected if cat_expected > 0 else 1.0
+        cat_fpr = cat_extra / cat_detected if cat_detected > 0 else 0.0
 
         results[category] = {
             'matched': cat_matched,
             'total': cat_expected,
             'recall': cat_recall,
+            'extra': cat_extra,
+            'detected': cat_detected,
+            'fpr': cat_fpr,
         }
         total_matched += cat_matched
         total_expected += cat_expected
+        total_extra += cat_extra
+        total_detected += cat_detected
 
     # Report per category
     overall_recall = total_matched / total_expected if total_expected > 0 else 1.0
-    print('\n=== ET-Bench Recall Report ===')
-    print(f'{"Category":<35} {"Matched":>10} {"Expected":>10} {"Recall":>10}')
-    print('-' * 67)
+    overall_fpr = total_extra / total_detected if total_detected > 0 else 0.0
+    print('\n=== ET-Bench Recall & False Positive Report ===')
+    print(f'{"Category":<35} {"Matched":>8} {"Expected":>8} {"Extra":>6} {"Recall":>8} {"FPR":>8}')
+    print('-' * 79)
     for category, r in sorted(results.items()):
-        print(f'{category:<35} {r["matched"]:>10} {r["total"]:>10} {r["recall"]:>10.2%}')
-    print('-' * 67)
-    print(f'{"OVERALL":<35} {total_matched:>10} {total_expected:>10} {overall_recall:>10.2%}')
+        print(f'{category:<35} {r["matched"]:>8} {r["total"]:>8} {r["extra"]:>6} {r["recall"]:>7.2%} {r["fpr"]:>7.2%}')
+    print('-' * 79)
+    print(f'{"OVERALL":<35} {total_matched:>8} {total_expected:>8} {total_extra:>6} {overall_recall:>7.2%} {overall_fpr:>7.2%}')
     print()
 
 
