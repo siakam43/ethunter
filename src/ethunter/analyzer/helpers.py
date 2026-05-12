@@ -226,3 +226,68 @@ def collect_field_assignments(tree: ts.Tree, unwrap_fn=None) -> list[FieldAssign
 
     _scan(tree.root_node)
     return results
+
+
+def collect_pointer_resolutions(tree: ts.Tree) -> dict[str, str]:
+    """Scan function bodies for ptr = &expr patterns.
+
+    Returns mapping: local_var_name -> resolved_name_or_path
+
+    Handles:
+    - ptr = &global_array[i]  ->  var_name -> global_array
+    - ptr = &global_struct    ->  var_name -> global_struct
+    - ptr = &obj->field       ->  var_name -> obj.field  (field path preserved)
+    """
+    resolutions: dict[str, str] = {}
+
+    def _scan(n: ts.Node) -> None:
+        if n.type == 'assignment_expression':
+            _handle_assignment(n, resolutions)
+        elif n.type == 'init_declarator':
+            _handle_init(n, resolutions)
+        for child in n.children:
+            _scan(child)
+
+    def _handle_assignment(node: ts.Node, resolutions: dict[str, str]) -> None:
+        lhs = node.child_by_field_name('left') or (node.children[0] if node.children else None)
+        rhs = node.child_by_field_name('right') or (
+            node.children[-1] if len(node.children) >= 2 else None
+        )
+        if not lhs or not rhs or lhs.type != 'identifier' or not lhs.text:
+            return
+        var_name = lhs.text.decode('utf-8')
+        resolved = _resolve_pointer_target(rhs)
+        if resolved:
+            resolutions[var_name] = resolved
+
+    def _handle_init(node: ts.Node, resolutions: dict[str, str]) -> None:
+        declarator = node.child_by_field_name('declarator')
+        value = node.child_by_field_name('value')
+        if not declarator or not value or value.type != 'pointer_expression':
+            return
+        var_name = extract_identifier_from_declarator(declarator)
+        if not var_name:
+            return
+        resolved = _resolve_pointer_target(value)
+        if resolved:
+            resolutions[var_name] = resolved
+
+    def _resolve_pointer_target(rhs: ts.Node) -> str | None:
+        """Extract target name/path from the operand of a pointer_expression (&expr)."""
+        if rhs.type != 'pointer_expression' or not rhs.children:
+            return None
+        inner = rhs.children[-1]
+        if inner.type == 'identifier' and inner.text:
+            return inner.text.decode('utf-8')
+        if inner.type == 'subscript_expression' and inner.children:
+            base = inner.children[0]
+            if base.type == 'identifier' and base.text:
+                return base.text.decode('utf-8')
+        if inner.type == 'field_expression':
+            field_path = extract_field_path(inner)
+            if field_path:
+                return field_path
+        return None
+
+    _scan(tree.root_node)
+    return resolutions

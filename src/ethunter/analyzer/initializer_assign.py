@@ -12,7 +12,7 @@ import tree_sitter as ts
 
 from ethunter.analyzer.dataflow import VariableState
 from ethunter.analyzer.symbol_table import SymbolTable
-from ethunter.analyzer.helpers import extract_identifier_from_declarator
+from ethunter.analyzer.helpers import extract_identifier_from_declarator, collect_pointer_resolutions
 
 
 def analyze(
@@ -228,45 +228,6 @@ def analyze(
                                     dataflow.assign(f'<gstruct:{var_name}.{field_name}>', target)
                         inner_index += 1
 
-    def _collect_pointer_resolutions() -> dict[str, str]:
-        """Scan function bodies for ptr = &global_name[...] or ptr = &global_name patterns.
-        Returns mapping: local_var_name -> global_name
-        """
-        resolutions: dict[str, str] = {}
-
-        def _scan(n: ts.Node) -> None:
-            if n.type == 'assignment_expression':
-                lhs = n.child_by_field_name('left') or (n.children[0] if n.children else None)
-                rhs = n.child_by_field_name('right') or (n.children[-1] if n.children else None)
-                if lhs and rhs and lhs.type == 'identifier' and lhs.text:
-                    var_name = lhs.text.decode('utf-8')
-                    if rhs.type == 'pointer_expression' and rhs.children:
-                        inner = rhs.children[-1]
-                        if inner.type == 'identifier' and inner.text:
-                            resolutions[var_name] = inner.text.decode('utf-8')
-                        elif inner.type == 'subscript_expression' and inner.children:
-                            base = inner.children[0]
-                            if base.type == 'identifier' and base.text:
-                                resolutions[var_name] = base.text.decode('utf-8')
-            elif n.type == 'init_declarator':
-                declarator = n.child_by_field_name('declarator')
-                value = n.child_by_field_name('value')
-                if declarator and value and value.type == 'pointer_expression' and value.children:
-                    var_name = extract_identifier_from_declarator(declarator)
-                    if var_name:
-                        inner = value.children[-1]
-                        if inner.type == 'identifier' and inner.text:
-                            resolutions[var_name] = inner.text.decode('utf-8')
-                        elif inner.type == 'subscript_expression' and inner.children:
-                            base = inner.children[0]
-                            if base.type == 'identifier' and base.text:
-                                resolutions[var_name] = base.text.decode('utf-8')
-            for child in n.children:
-                _scan(child)
-
-        _scan(tree.root_node)
-        return resolutions
-
     def _track_pointer_field_assignments(
         tree: ts.Tree,
         filepath: str,
@@ -279,7 +240,7 @@ def analyze(
         1. vec->field = literal_func (direct literal function name)
         2. vec->field = param_func (parameter, needs call-site tracing)
         """
-        resolutions = _collect_pointer_resolutions()
+        resolutions = collect_pointer_resolutions(tree)
 
         # Collect function parameters (func_name -> [param_names])
         func_params: dict[str, list[str]] = {}

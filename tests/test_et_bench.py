@@ -321,3 +321,37 @@ def test_bug0_array_of_structs_with_inner_init_list():
     garray_targets = df.resolve('<garray:table>')
     assert 'do_a' in garray_targets, f"Expected do_a in garray:table"
     assert 'do_b' in garray_targets, f"Expected do_b in garray:table"
+
+
+def test_fix_a_collect_pointer_resolutions():
+    """Fix A: collect_pointer_resolutions handles &identifier, &subscript, &field_expr."""
+    import tree_sitter_c as tsc
+    from tree_sitter import Language, Parser
+
+    source = b'''
+    struct ops {
+        void (*init)(void);
+    };
+
+    static void my_init(void) {}
+    static struct ops my_ops = { my_init };
+    static struct ops ops_array[1] = { { my_init } };
+
+    void test_func(void) {
+        struct ops *p1 = &my_ops;           // &identifier
+        struct ops *p2 = &ops_array[0];     // &subscript_expression
+        struct ops *p3 = &(my_ops);         // &parenthesized (edge case)
+    }
+    '''
+    lang = Language(tsc.language())
+    parser = Parser(lang)
+    tree = parser.parse(source)
+
+    from ethunter.analyzer.helpers import collect_pointer_resolutions
+
+    resolutions = collect_pointer_resolutions(tree)
+    assert 'p1' in resolutions, f"p1 not found in {resolutions}"
+    assert resolutions['p1'] == 'my_ops', f"p1 -> {resolutions.get('p1')}"
+    assert 'p2' in resolutions, f"p2 not found in {resolutions}"
+    assert resolutions['p2'] == 'ops_array', f"p2 -> {resolutions.get('p2')}"
+    assert 'p3' not in resolutions, f"p3 should not resolve (parenthesized, not field_expr)"

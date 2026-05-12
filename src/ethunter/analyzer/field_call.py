@@ -18,7 +18,10 @@ import tree_sitter as ts
 from ethunter.graph.model import CallEdge, CallType
 from ethunter.analyzer.dataflow import VariableState
 from ethunter.analyzer.symbol_table import SymbolTable
-from ethunter.analyzer.helpers import find_enclosing_function, extract_field_path, collect_field_assignments
+from ethunter.analyzer.helpers import (
+    find_enclosing_function, extract_field_path, collect_field_assignments,
+    collect_pointer_resolutions,
+)
 
 
 def _collect_macros(tree: ts.Tree) -> dict[str, str]:
@@ -85,6 +88,9 @@ def analyze(
     for fa in collect_field_assignments(tree, unwrap_fn=getattr(dataflow, 'unwrap_cast', None)):
         if fa.resolved_value is not None and fa.resolved_value in symbol_names:
             dataflow.assign(f'<gstruct:{fa.field_path}>', fa.resolved_value)
+
+    # Pass 1b: collect pointer resolutions (local var -> global array/struct name)
+    pointer_resolutions = collect_pointer_resolutions(tree)
 
     # Pass 2: detect call sites (existing logic, minus the assignment block)
     def _visit(node: ts.Node) -> None:
@@ -169,6 +175,13 @@ def analyze(
                             for key, vals in dataflow.targets.items():
                                 if key.endswith(f'.{last_part}>') and vals:
                                     targets.update(vals)
+                    # Fallback: pointer alias resolution (Fix A)
+                    if not targets and '.' in field_path:
+                        base_name = field_path.split('.')[0]
+                        if base_name in pointer_resolutions:
+                            resolved_base = pointer_resolutions[base_name]
+                            field_suffix = '.'.join(field_path.split('.')[1:])
+                            targets = dataflow.resolve(f'<gstruct:{resolved_base}.{field_suffix}>')
                     # Fallback: try <vtable:path> (old key format)
                     if not targets:
                         targets = dataflow.resolve(f'<vtable:{field_path}>')
