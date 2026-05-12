@@ -79,8 +79,6 @@ ccp_fold (gimple *stmt)
     switch (gimple_code (stmt))
     {
     case TREE_CODE_SWITCH:
-        return valueize_op (gimple_call_arg (stmt, 0));
-
     case TREE_CODE_COND:
     case TREE_CODE_ASSIGN:
     case TREE_CODE_CALL:
