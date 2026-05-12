@@ -312,6 +312,14 @@ def analyze(
                                     call_name, arg_idx, target,
                                     dataflow, symbol_names
                                 )
+                            else:
+                                # Fallback: check dataflow for local var assigned to fnptr
+                                df_targets = dataflow.resolve(target)
+                                if df_targets and arg_idx < len(param_names):
+                                    pname = param_names[arg_idx]
+                                    if pname not in param_mappings:
+                                        param_mappings[pname] = set()
+                                    param_mappings[pname].update(df_targets)
                         elif c.type == 'cast_expression':
                             # Extract identifier from nested cast
                             extracted = None
@@ -345,6 +353,33 @@ def analyze(
                                     call_name, arg_idx, target,
                                     dataflow, symbol_names
                                 )
+                        elif c.type == 'pointer_expression' and c.children:
+                            # Extract &func from pointer_expression
+                            inner = c.children[-1]
+                            if inner.type == 'identifier' and inner.text:
+                                target = inner.text.decode('utf-8')
+                                if target in symbol_names:
+                                    arg_idx = comma_count
+                                    if _is_registration(call_name):
+                                        dataflow.register_callback(target)
+                                        edges.append(CallEdge(
+                                            caller=caller or '<registration>',
+                                            callee=target,
+                                            caller_file=filepath,
+                                            callee_file='',
+                                            type=CallType.INDIRECT,
+                                            indirect_kind='callback_reg',
+                                            caller_line=node.start_point[0] + 1,
+                                        ))
+                                    elif arg_idx < len(param_names):
+                                        pname = param_names[arg_idx]
+                                        if pname not in param_mappings:
+                                            param_mappings[pname] = set()
+                                        param_mappings[pname].add(target)
+                                    _propagate_call_site(
+                                        call_name, arg_idx, target,
+                                        dataflow, symbol_names
+                                    )
         for child in node.children:
             _collect_call_params(child)
 
@@ -397,9 +432,24 @@ def analyze(
     def _detect_param_calls(node: ts.Node) -> None:
         if node.type == 'call_expression':
             func_node = node.child_by_field_name('function') or node.children[0]
+            call_target_name = None
             if func_node and func_node.type == 'identifier' and func_node.text:
-                fname = func_node.text.decode('utf-8')
-                targets = param_mappings.get(fname)
+                call_target_name = func_node.text.decode('utf-8')
+            elif func_node and func_node.type == 'parenthesized_expression':
+                # (*fp)(args) — extract inner identifier from pointer_expression
+                for c in func_node.children:
+                    if c.type == 'pointer_expression' and c.children:
+                        inner = c.children[-1]
+                        if inner.type == 'identifier' and inner.text:
+                            call_target_name = inner.text.decode('utf-8')
+                            break
+            elif func_node and func_node.type == 'pointer_expression' and func_node.children:
+                # *fp(args) — extract identifier
+                inner = func_node.children[-1]
+                if inner.type == 'identifier' and inner.text:
+                    call_target_name = inner.text.decode('utf-8')
+            if call_target_name:
+                targets = param_mappings.get(call_target_name)
                 if targets:
                     caller = find_enclosing_function(node, tree.root_node)
                     for target in targets:

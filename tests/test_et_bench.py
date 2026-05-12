@@ -622,3 +622,166 @@ def test_param_local_call_direct():
     pairs = {(e.caller, e.callee) for e in graph.edges if e.type.value == 'indirect'}
     assert ('print_units', 'format_time_us') in pairs, \
         f"Expected print_units -> format_time_us, got: {pairs}"
+
+
+def test_param_local_call_address_of():
+    """Phase 2: &func passed as fnptr argument, called through parameter in callee."""
+    import tree_sitter_c as tsc
+    from tree_sitter import Language, Parser
+
+    source = b'''
+    typedef const void *(*ptr_getter)(void *ctx, size_t i);
+
+    const void *my_getter(void *ctx, size_t i) {
+        return (void *)(unsigned long long)i;
+    }
+
+    static void batch_lookup(size_t n, ptr_getter getter, void *ctx) {
+        for (size_t i = 0; i < n; i++) {
+            getter(ctx, i);
+        }
+    }
+
+    void caller_func(void) {
+        batch_lookup(10, &my_getter, ((void *)0));
+    }
+    '''
+    lang = Language(tsc.language())
+    parser = Parser(lang)
+    tree = parser.parse(source)
+
+    from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
+    from ethunter.analyzer.dataflow import VariableState
+    from ethunter.analyzer.orchestrator import run_all_analyses
+
+    st = SymbolTable()
+    for func in extract_functions(tree, "test.c"):
+        st.add_function(func)
+    df = VariableState()
+
+    graph = run_all_analyses({"test.c": tree}, st, df)
+    pairs = {(e.caller, e.callee) for e in graph.edges if e.type.value == 'indirect'}
+    assert ('batch_lookup', 'my_getter') in pairs, \
+        f"Expected batch_lookup -> my_getter, got: {pairs}"
+
+
+def test_param_local_var_dataflow_fallback():
+    """Phase 2: local var = func_name; callee(local_var) -> resolve via dataflow."""
+    import tree_sitter_c as tsc
+    from tree_sitter import Language, Parser
+
+    source = b'''
+    typedef int (*cmp_fn)(const void *, const void *);
+
+    int sort_asc(const void *a, const void *b) { (void)a; (void)b; return 0; }
+
+    static void my_qsort(void *base, size_t n, size_t sz, cmp_fn cmp) {
+        cmp(base, ((char *)base) + sz);
+    }
+
+    void sort_data(void) {
+        cmp_fn callback = sort_asc;
+        my_qsort(((void *)0), 10, 8, callback);
+    }
+    '''
+    lang = Language(tsc.language())
+    parser = Parser(lang)
+    tree = parser.parse(source)
+
+    from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
+    from ethunter.analyzer.dataflow import VariableState
+    from ethunter.analyzer.orchestrator import run_all_analyses
+
+    st = SymbolTable()
+    for func in extract_functions(tree, "test.c"):
+        st.add_function(func)
+    df = VariableState()
+
+    graph = run_all_analyses({"test.c": tree}, st, df)
+    pairs = {(e.caller, e.callee) for e in graph.edges if e.type.value == 'indirect'}
+    assert ('my_qsort', 'sort_asc') in pairs, \
+        f"Expected my_qsort -> sort_asc, got: {pairs}"
+
+
+def test_param_local_call_deref():
+    """Phase 2: (*fnptr)(args) dereference call through parameter."""
+    import tree_sitter_c as tsc
+    from tree_sitter import Language, Parser
+
+    source = b'''
+    typedef void (*cb_fn)(int x);
+
+    static void actual_cb(int x) { (void)x; }
+
+    static void invoke_cb(int x, cb_fn cb) {
+        (*cb)(x);
+    }
+
+    void main_func(void) {
+        invoke_cb(42, actual_cb);
+    }
+    '''
+    lang = Language(tsc.language())
+    parser = Parser(lang)
+    tree = parser.parse(source)
+
+    from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
+    from ethunter.analyzer.dataflow import VariableState
+    from ethunter.analyzer.orchestrator import run_all_analyses
+
+    st = SymbolTable()
+    for func in extract_functions(tree, "test.c"):
+        st.add_function(func)
+    df = VariableState()
+
+    graph = run_all_analyses({"test.c": tree}, st, df)
+    pairs = {(e.caller, e.callee) for e in graph.edges if e.type.value == 'indirect'}
+    assert ('invoke_cb', 'actual_cb') in pairs, \
+        f"Expected invoke_cb -> actual_cb, got: {pairs}"
+
+
+def test_param_callback_of_callback():
+    """Phase 2: field->fnptr(fnptr_arg) — fnptr passed as arg to indirect field call."""
+    import tree_sitter_c as tsc
+    from tree_sitter import Language, Parser
+
+    source = b'''
+    typedef void (*op_fn)(void *ptr);
+
+    static void my_relocate(void *ptr) { (void)ptr; }
+
+    typedef struct {
+        void (*note_fn)(void *obj, void *cookie, op_fn op);
+        void *obj;
+        void *cookie;
+    } ptr_data_t;
+
+    static void my_note_fn(void *obj, void *cookie, op_fn op) {
+        op(obj);
+    }
+
+    static ptr_data_t slot;
+
+    void caller_func(void) {
+        slot.note_fn = my_note_fn;
+        if (slot.note_fn)
+            slot.note_fn(slot.obj, slot.cookie, my_relocate);
+    }
+    '''
+    lang = Language(tsc.language())
+    parser = Parser(lang)
+    tree = parser.parse(source)
+
+    from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
+    from ethunter.analyzer.dataflow import VariableState
+    from ethunter.analyzer.orchestrator import run_all_analyses
+
+    st = SymbolTable()
+    for func in extract_functions(tree, "test.c"):
+        st.add_function(func)
+    df = VariableState()
+
+    graph = run_all_analyses({"test.c": tree}, st, df)
+    pairs = {(e.caller, e.callee) for e in graph.edges if e.type.value == 'indirect'}
+    assert ('caller_func', 'my_relocate') in pairs, \
+        f"Expected caller_func -> my_relocate, got: {pairs}"
