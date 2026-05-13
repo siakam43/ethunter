@@ -44,46 +44,46 @@ if not df_targets:
 
 **召回安全性**：bare key 仍然写入（P3 兼容），无前缀 key 时不命中时 fallback 到 bare key。其他模块（direct_assign 等）对参数名的 resolve 不受影响——它们使用 bare key resolve，该 key 仍被 P3 填充。
 
-### Fix B：callback_reg struct-field 冗余抑制（影响 ~100 callback_reg FPs）
+### Fix B：callback_reg struct-field 冗余后处理抑制（影响 ~100 callback_reg FPs）
 
 **根因**：当 fnptr 实参最终存入 struct 字段时，`field_call` 已产出精确边（caller=dispatcher），`callback_reg` 同时产出粗略边（caller=注册调用者），后者全部冗余。example_4：field_call 产出 57 条正确边 `(zfsdev_ioctl_common, zfs_ioc_*)`，callback_reg 产出 77 条冗余边 `(zfs_ioctl_init, zfs_ioc_*)`。
 
-**机制**：`_register_phase`（Phase 1a）已通过 `register_param_mapping` 追踪 param→field 映射。当 `zfs_ioctl_register_legacy(ioc, func, ...)` 体内做 `vec->zvec_legacy_func = func` 时，`engine.param_fields[("zfs_ioctl_register_legacy", 1)] = {"<gstruct:zfs_ioc_vec.zvec_legacy_func>"}`。
+**机制**：call chain 为 `zfs_ioctl_init → zfs_ioctl_register_pool → zfs_ioctl_register_legacy → field assignment`。`_register_phase` 的 `param_fields` 仅追踪 leaf 函数（`zfs_ioctl_register_legacy`）的 param→field 映射，中间 wrapper 不在 `param_fields` 中——因此需用后处理方式（按 callee 重叠判断）而非 emit 时的 `param_fields` 检查。
 
-**修复**：Pass 1 `_is_registration` 分支中，检查当前 call site 的 `(call_name, arg_idx)` 是否在 `engine.param_fields` 中有映射记录。如果有，说明 fnptr 最终存入 struct 字段，field_call 会产出更精确的边，callback_reg 边应被抑制。
+**修复**：orchestrator 去重阶段新增抑制逻辑——在所有分析完成后，对每条 `callback_reg` 边，检查是否存在同 callee 的 `field_call` 边。如果存在，表明该 fnptr 通过 struct field dispatch 被调用，`field_call` 的 caller 信息更精确，`callback_reg` 边为冗余。
 
 ```python
-if _is_registration(call_name):
-    fp_params = ...  # 现有 P2 代码
-    fp_positions = ...
-    
-    # Check if this (callee, arg_idx) stores fnptr into a struct field
-    has_field_mapping = hasattr(dataflow, 'param_fields') and \
-        (call_name, arg_idx) in dataflow.param_fields
-    
-    if not fp_positions or arg_idx in fp_positions:
-        if not has_field_mapping:
-            dataflow.register_callback(target)
-            edges.append(CallEdge(
-                caller=caller or '<registration>',
-                ...
-                indirect_kind='callback_reg',
-            ))
-    if arg_idx < len(param_names):
-        pname = param_names[arg_idx]
-        dataflow.assign(f'{call_name}:{pname}', target)
-        dataflow.assign(pname, target)
+# orchestrator.py dedup 阶段新增:
+# Collect callees that have field_call edges
+field_callees = {e.callee for e in graph.edges
+                 if e.type == CallType.INDIRECT and e.indirect_kind == 'field_call'}
+
+# Filter callback_reg edges: suppress those whose callee is already covered by field_call
+filtered_edges = []
+for edge in graph.edges:
+    if edge.indirect_kind == 'callback_reg' and edge.callee in field_callees:
+        continue  # field_call already provides a better edge for this callee
+    filtered_edges.append(edge)
+graph.edges = filtered_edges
 ```
 
-**dataflow.assign 保留**：即使 callback_reg 边被抑制，`dataflow.assign(...)` 仍执行——后续 Pass 2/Pass 3 的 field assignment 解析可能依赖这些 dataflow 条目（如 parameter → field 的跨函数传播）。
+**召回安全性验证**：实现前先用临时日志或 Python 脚本标记出所有由 `callback_reg` 产出、`field_call` **未**覆盖的 ground truth 边。如果存在此类边，则仅在有 `field_call` 覆盖时才抑制，不能全局删除。验证方法：
 
-**召回安全性验证**：实现前先跑全量 ET-Bench，标记出所有由 callback_reg 产出、field_call **未**覆盖的 ground truth 边。如果存在此类边（即 ground truth 期望 `callback_reg` 的 caller 名且无 `field_call` 覆盖），则仅在有 field_call 覆盖时才抑制。
+```python
+# 对每个 example:
+field_callees = {e.callee for e in edges if e.indirect_kind == 'field_call'}
+cr_matched = {(e.caller, e.callee) for e in edges
+              if e.indirect_kind == 'callback_reg' and (e.caller, e.callee) in gt_pairs}
+cr_would_lose = {(c, t) for (c, t) in cr_matched if t not in field_callees}
+# 如果 cr_would_lose 非空，则存在只在 callback_reg 中而不在 field_call 中的 ground truth 边
+```
 
 ## 涉及文件
 
 | 文件 | 变更类型 |
 |------|---------|
-| `src/ethunter/analyzer/param_assign.py` | Fix A：Pass 1 fallback 分支 ~line 462 改前缀解析；Fix B：`_is_registration` 三个分支加 field mapping 检查 |
+| `src/ethunter/analyzer/param_assign.py` | Fix A：Pass 1 fallback 分支 ~line 462 改前缀解析 |
+| `src/ethunter/analyzer/orchestrator.py` | Fix B：dedup 阶段新增 callback_reg × field_call 重叠抑制 |
 | `tests/test_et_bench.py` | 新增 TDD 测试；更新 FPR ceilings |
 
 ## 测试策略（TDD）
