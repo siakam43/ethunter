@@ -142,6 +142,24 @@ def test_et_bench_report():
     print(f'{"OVERALL":<35} {total_matched:>8} {total_expected:>8} {total_extra:>6} {overall_recall:>7.2%} {overall_fpr:>7.2%}')
     print()
 
+    # FPR ceilings — start at current baseline, lowered as fixes land
+    fpr_ceilings = {
+        'fnptr-callback': 0.80,
+        'fnptr-cast': 0.63,
+        'fnptr-global-array': 0.01,
+        'fnptr-global-struct': 0.90,
+        'fnptr-global-struct-array': 0.47,
+        'fnptr-library': 0.35,
+        'fnptr-only': 0.08,
+        'fnptr-struct': 0.47,
+        'fnptr-varargs': 0.76,
+    }
+    for category, ceiling in fpr_ceilings.items():
+        if category in results:
+            actual_fpr = results[category]['fpr']
+            assert actual_fpr <= ceiling, \
+                f"{category} FPR={actual_fpr:.2%} exceeds ceiling {ceiling:.2%}"
+
 
 def _run_fixture(example_dir):
     """Helper: run ethunter on a fixture directory and return graph."""
@@ -1004,3 +1022,69 @@ def test_macro_expansion_param_tracking():
     pairs = {(e.caller, e.callee) for e in graph.edges if e.type.value == 'indirect'}
     assert ('invoke', 'my_handler') in pairs, \
         f"Expected invoke -> my_handler, got: {pairs}"
+
+
+# === Recall regression guards ===
+
+def _category_recall(category):
+    """Compute recall and FPR for a single category."""
+    cat_dir = os.path.join(ET_BENCH_DIR, category)
+    matched = 0
+    total = 0
+    extra = 0
+    detected = 0
+    for example in sorted(os.listdir(cat_dir)):
+        if not example.startswith('example_'):
+            continue
+        ex_dir = os.path.join(cat_dir, example)
+        expected = _load_example_ground_truth(ex_dir)
+        if not expected:
+            continue
+        total += len(expected)
+        graph = _run_analysis_on_fixture(ex_dir)
+        indirect_edges = [e for e in graph.edges if e.type.value == 'indirect']
+        found_pairs = {(e.caller, e.callee) for e in indirect_edges}
+        expected_pairs = {(e['caller'], e['callee']) for e in expected}
+        matched += len(found_pairs & expected_pairs)
+        extra += len(found_pairs - expected_pairs)
+        detected += len(found_pairs)
+    recall = matched / total if total > 0 else 1.0
+    fpr = extra / detected if detected > 0 else 0.0
+    return matched, total, recall, fpr
+
+
+def test_fnptr_callback_full_recall():
+    matched, total, recall, _ = _category_recall('fnptr-callback')
+    assert recall == 1.0, f"fnptr-callback recall={recall:.2%} ({matched}/{total})"
+
+def test_fnptr_cast_full_recall():
+    matched, total, recall, _ = _category_recall('fnptr-cast')
+    assert recall == 1.0, f"fnptr-cast recall={recall:.2%} ({matched}/{total})"
+
+def test_fnptr_global_array_full_recall():
+    matched, total, recall, _ = _category_recall('fnptr-global-array')
+    assert recall == 1.0, f"fnptr-global-array recall={recall:.2%} ({matched}/{total})"
+
+def test_fnptr_global_struct_full_recall():
+    matched, total, recall, _ = _category_recall('fnptr-global-struct')
+    assert recall == 1.0, f"fnptr-global-struct recall={recall:.2%} ({matched}/{total})"
+
+def test_fnptr_global_struct_array_full_recall():
+    matched, total, recall, _ = _category_recall('fnptr-global-struct-array')
+    assert recall == 1.0, f"fnptr-global-struct-array recall={recall:.2%} ({matched}/{total})"
+
+def test_fnptr_library_full_recall():
+    matched, total, recall, _ = _category_recall('fnptr-library')
+    assert recall == 1.0, f"fnptr-library recall={recall:.2%} ({matched}/{total})"
+
+def test_fnptr_only_full_recall():
+    matched, total, recall, _ = _category_recall('fnptr-only')
+    assert recall == 1.0, f"fnptr-only recall={recall:.2%} ({matched}/{total})"
+
+def test_fnptr_struct_full_recall():
+    matched, total, recall, _ = _category_recall('fnptr-struct')
+    assert recall == 1.0, f"fnptr-struct recall={recall:.2%} ({matched}/{total})"
+
+def test_fnptr_varargs_full_recall():
+    matched, total, recall, _ = _category_recall('fnptr-varargs')
+    assert recall == 1.0, f"fnptr-varargs recall={recall:.2%} ({matched}/{total})"
