@@ -32,13 +32,13 @@ static void h_a(int x) { (void)x; }
 static void h_b(int x) { (void)x; }
 
 /* Level 2: actually calls the fnptr */
-static void inner_dispatch(cb_fn cb) {
+static void inner_call(cb_fn cb) {
     cb(42);
 }
 
 /* Level 1: forwards fnptr to level 2 */
 static void mid_forward(cb_fn cb) {
-    inner_dispatch(cb);
+    inner_call(cb);
 }
 
 void outer_a(void) { mid_forward(h_a); }
@@ -61,11 +61,11 @@ void outer_b(void) { mid_forward(h_b); }
     cp_edges = [(e.caller, e.callee) for e in graph.edges if e.indirect_kind == "callback_param"]
     pairs = set(cp_edges)
 
-    # inner_dispatch should be the caller for both h_a and h_b
-    assert ("inner_dispatch", "h_a") in pairs, \
-        f"inner_dispatch -> h_a missing: {pairs}"
-    assert ("inner_dispatch", "h_b") in pairs, \
-        f"inner_dispatch -> h_b missing: {pairs}"
+    # inner_call should be the caller for both h_a and h_b
+    assert ("inner_call", "h_a") in pairs, \
+        f"inner_call -> h_a missing: {pairs}"
+    assert ("inner_call", "h_b") in pairs, \
+        f"inner_call -> h_b missing: {pairs}"
 
     # mid_forward should NOT be the caller (it just forwards)
     assert ("mid_forward", "h_a") not in pairs, \
@@ -76,7 +76,7 @@ void outer_b(void) { mid_forward(h_b); }
 
 Run: `.venv/bin/python -m pytest tests/test_et_bench.py::test_fix1_multi_level_forwarding -v`
 
-Expected: FAIL — `("inner_dispatch", "h_a")` NOT in pairs (inner caller not detected through two-level forwarding).
+Expected: FAIL — `("inner_call", "h_a")` NOT in pairs (inner caller not detected through two-level forwarding).
 
 - [ ] **Step 3: Implement Fix 1**
 
