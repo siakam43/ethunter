@@ -1,7 +1,7 @@
 {
   "examples": [
     {
-      "caller": "gt_pch_save",
+      "caller": "gt_pch_p_14lang_tree_node",
       "callee": "relocate_ptrs"
     }
   ]

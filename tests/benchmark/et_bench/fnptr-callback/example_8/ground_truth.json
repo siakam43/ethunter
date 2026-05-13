@@ -1,11 +1,11 @@
 {
   "examples": [
     {
-      "caller": "georadiusGeneric",
+      "caller": "_pqsort",
       "callee": "sort_gp_asc"
     },
     {
-      "caller": "georadiusGeneric",
+      "caller": "_pqsort",
       "callee": "sort_gp_desc"
     },
     {
