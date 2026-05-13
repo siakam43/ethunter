@@ -1088,3 +1088,97 @@ def test_fnptr_struct_full_recall():
 def test_fnptr_varargs_full_recall():
     matched, total, recall, _ = _category_recall('fnptr-varargs')
     assert recall == 1.0, f"fnptr-varargs recall={recall:.2%} ({matched}/{total})"
+
+
+def test_p2_callback_reg_only_fnptr_positions():
+    """Registration function: only fnptr-param positions emit callback_reg edges."""
+    import tree_sitter_c as tsc
+    from tree_sitter import Language, Parser
+
+    source = b'''
+typedef void (*cb_fn)(int x);
+
+static void my_handler(int x) { (void)x; }
+static void cleanup_handler(int x) { (void)x; }
+static void name_func(int x) { (void)x; }  /* name used as non-fnptr arg */
+
+struct ctx { cb_fn handler; cb_fn cleanup; };
+
+static void register_item(struct ctx *c, const char *name, int pri, cb_fn cb) {
+    c->handler = cb;
+}
+static void register_cleanup(struct ctx *c, cb_fn cleanup) {
+    c->cleanup = cleanup;
+}
+
+void setup(void) {
+    struct ctx c;
+    /* name_func at pos 1 (const char*, NOT fnptr) -- should NOT emit callback_reg */
+    register_item(&c, name_func, 10, my_handler);
+    register_cleanup(&c, cleanup_handler);
+}
+
+void invoke(struct ctx *c) {
+    if (c->handler)
+        c->handler(42);
+}
+'''
+    lang = Language(tsc.language())
+    parser = Parser(lang)
+    tree = parser.parse(source)
+
+    from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
+    from ethunter.analyzer.dataflow import VariableState
+    from ethunter.analyzer.orchestrator import run_all_analyses
+
+    st = SymbolTable()
+    for func in extract_functions(tree, "test.c"):
+        st.add_function(func)
+    df = VariableState()
+
+    graph = run_all_analyses({"test.c": tree}, st, df)
+    callback_reg_edges = [e for e in graph.edges if e.indirect_kind == 'callback_reg']
+    callees = {e.callee for e in callback_reg_edges}
+    assert 'my_handler' in callees, f"Expected my_handler in callback_reg, got: {callees}"
+    assert 'cleanup_handler' in callees, \
+        f"Expected cleanup_handler in callback_reg, got: {callees}"
+    assert 'name_func' not in callees, \
+        f"name_func at non-fnptr position should NOT be in callback_reg, got: {callees}"
+
+
+def test_p2_callback_reg_cross_file_fallback():
+    """Registration function not in func_fp_params still emits callback_reg (no regression)."""
+    source = b'''
+typedef void (*cb_fn)(int x);
+static void my_handler(int x) { (void)x; }
+struct ctx { cb_fn handler; };
+
+/* Declaration only -- no function_definition, register_remote NOT in func_fp_params */
+void register_remote(void *ctx, cb_fn cb);
+
+void setup(void) {
+    struct ctx c;
+    register_remote(&c, my_handler);
+}
+'''
+    import tree_sitter_c as tsc
+    from tree_sitter import Language, Parser
+
+    lang = Language(tsc.language())
+    parser = Parser(lang)
+    tree = parser.parse(source)
+
+    from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
+    from ethunter.analyzer.dataflow import VariableState
+    from ethunter.analyzer.orchestrator import run_all_analyses
+
+    st = SymbolTable()
+    for func in extract_functions(tree, "test.c"):
+        st.add_function(func)
+    df = VariableState()
+
+    graph = run_all_analyses({"test.c": tree}, st, df)
+    callback_reg_edges = [e for e in graph.edges if e.indirect_kind == 'callback_reg']
+    callees = {e.callee for e in callback_reg_edges}
+    assert 'my_handler' in callees, \
+        f"Cross-file fallback failed: expected my_handler in {callees}"

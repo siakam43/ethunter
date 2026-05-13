@@ -80,12 +80,54 @@ def _extract_field_operand(field_expr) -> str | None:
     return None
 
 
-def _has_fnptr_declarator(node) -> bool:
-    """Check if a parameter_declaration subtree contains a function_declarator (fnptr param)."""
+def _collect_fnptr_typedefs(tree) -> set[str]:
+    """Collect typedef names that are function pointer types from the AST.
+
+    e.g. 'typedef void (*cb_fn)(int x);' -> adds 'cb_fn'
+    AST: type_definition -> function_declarator -> parenthesized_declarator ->
+         pointer_declarator -> type_identifier: 'cb_fn'
+    """
+    fnptr_typedefs: set[str] = set()
+
+    def _scan(n) -> None:
+        if n.type == 'type_definition':
+            for child in n.children:
+                if child.type == 'function_declarator':
+                    # Extract type_identifier from nested structure
+                    def _extract_name(node) -> str | None:
+                        if node.type == 'type_identifier' and node.text:
+                            return node.text.decode('utf-8')
+                        for c in node.children:
+                            result = _extract_name(c)
+                            if result:
+                                return result
+                        return None
+                    name = _extract_name(child)
+                    if name:
+                        fnptr_typedefs.add(name)
+                    break
+        for child in n.children:
+            _scan(child)
+
+    _scan(tree.root_node)
+    return fnptr_typedefs
+
+
+def _has_fnptr_declarator(node, fnptr_typedefs: set[str] | None = None) -> bool:
+    """Check if a parameter_declaration subtree contains a function_declarator (fnptr param).
+
+    Also checks for typedef-based fnptr params using fnptr_typedefs set.
+    """
     if node.type == 'function_declarator':
         return True
+    if fnptr_typedefs is not None:
+        for c in node.children:
+            if c.type in ('type_identifier', 'primitive_type') and c.text:
+                type_name = c.text.decode('utf-8')
+                if type_name in fnptr_typedefs:
+                    return True
     for c in node.children:
-        if _has_fnptr_declarator(c):
+        if _has_fnptr_declarator(c, fnptr_typedefs):
             return True
     return False
 
@@ -124,7 +166,8 @@ def _collect_simple_macros(tree) -> dict[str, tuple[str, list[str]]]:
     return macros
 
 
-def _collect_func_params(node, func_params: dict, func_fp_params: dict | None = None) -> None:
+def _collect_func_params(node, func_params: dict, func_fp_params: dict | None = None,
+                        fnptr_typedefs: set[str] | None = None) -> None:
     """Collect function parameter lists and optionally fnptr parameter positions."""
     if node.type == 'function_definition':
         decl = _find_child(node, 'function_declarator')
@@ -148,14 +191,14 @@ def _collect_func_params(node, func_params: dict, func_fp_params: dict | None = 
                             pname = _extract_param_name(p)
                             if pname:
                                 params.append(pname)
-                                if func_fp_params is not None and _has_fnptr_declarator(p):
+                                if func_fp_params is not None and _has_fnptr_declarator(p, fnptr_typedefs):
                                     fp_positions.add(pos)
                                 pos += 1
                 func_params[fname] = params
                 if func_fp_params is not None and fp_positions:
                     func_fp_params[fname] = fp_positions
     for child in node.children:
-        _collect_func_params(child, func_params, func_fp_params)
+        _collect_func_params(child, func_params, func_fp_params, fnptr_typedefs)
 
 
 def _extract_param_name(param_decl) -> str | None:
@@ -192,7 +235,18 @@ def _register_phase(
         return  # VariableState passed — nothing to register
 
     func_params: dict[str, list[str]] = {}
-    _collect_func_params(tree.root_node, func_params)
+    func_fp_params: dict[str, set[int]] = {}
+    fnptr_typedefs = _collect_fnptr_typedefs(tree)
+    _collect_func_params(tree.root_node, func_params, func_fp_params, fnptr_typedefs)
+    # Store on engine (cross-file accumulation)
+    if hasattr(dataflow, 'state'):
+        if not hasattr(dataflow.state, 'func_fp_params'):
+            dataflow.state.func_fp_params = {}
+        dataflow.state.func_fp_params.update(func_fp_params)
+    else:
+        if not hasattr(dataflow, 'func_fp_params'):
+            dataflow.func_fp_params = {}
+        dataflow.func_fp_params.update(func_fp_params)
 
     # Scan for field = param patterns -> register_param_mapping
     if hasattr(dataflow, 'register_param_mapping'):
@@ -278,16 +332,21 @@ def analyze(
     func_params: dict[str, list[str]] = {}  # func_name -> [param_names]
     func_fp_params: dict[str, set[int]] = {}  # func_name -> {fnptr_param_positions}
 
-    _collect_func_params(tree.root_node, func_params, func_fp_params)
+    fnptr_typedefs = _collect_fnptr_typedefs(tree)
+    _collect_func_params(tree.root_node, func_params, func_fp_params, fnptr_typedefs)
 
     # Collect function-wrapper macros for call-site expansion
     macros = _collect_simple_macros(tree)
 
     # Store func_fp_params in dataflow for field_call callback-of-callback handling
     if hasattr(dataflow, 'state'):
-        dataflow.state.func_fp_params = func_fp_params
+        if not hasattr(dataflow.state, 'func_fp_params'):
+            dataflow.state.func_fp_params = {}
+        dataflow.state.func_fp_params.update(func_fp_params)
     else:
-        dataflow.func_fp_params = func_fp_params
+        if not hasattr(dataflow, 'func_fp_params'):
+            dataflow.func_fp_params = {}
+        dataflow.func_fp_params.update(func_fp_params)
 
     # === Collect return value tracking ===
     if hasattr(dataflow, 'register_return'):
@@ -361,16 +420,21 @@ def analyze(
                             target = c.text.decode('utf-8')
                             if target in symbol_names:
                                 if _is_registration(call_name):
-                                    dataflow.register_callback(target)
-                                    edges.append(CallEdge(
-                                        caller=caller or '<registration>',
-                                        callee=target,
-                                        caller_file=filepath,
-                                        callee_file='',
-                                        type=CallType.INDIRECT,
-                                        indirect_kind='callback_reg',
-                                        caller_line=node.start_point[0] + 1,
-                                    ))
+                                    fp_params = getattr(dataflow, 'func_fp_params', None)
+                                    if fp_params is None and hasattr(dataflow, 'state'):
+                                        fp_params = getattr(dataflow.state, 'func_fp_params', None)
+                                    fp_positions = fp_params.get(call_name, set()) if fp_params else set()
+                                    if not fp_positions or arg_idx in fp_positions:
+                                        dataflow.register_callback(target)
+                                        edges.append(CallEdge(
+                                            caller=caller or '<registration>',
+                                            callee=target,
+                                            caller_file=filepath,
+                                            callee_file='',
+                                            type=CallType.INDIRECT,
+                                            indirect_kind='callback_reg',
+                                            caller_line=node.start_point[0] + 1,
+                                        ))
                                     if arg_idx < len(param_names):
                                         pname = param_names[arg_idx]
                                         dataflow.assign(pname, target)
@@ -407,16 +471,21 @@ def analyze(
                                 arg_idx = comma_count
                                 target = extracted
                                 if _is_registration(call_name):
-                                    dataflow.register_callback(target)
-                                    edges.append(CallEdge(
-                                        caller=caller or '<registration>',
-                                        callee=target,
-                                        caller_file=filepath,
-                                        callee_file='',
-                                        type=CallType.INDIRECT,
-                                        indirect_kind='callback_reg',
-                                        caller_line=node.start_point[0] + 1,
-                                    ))
+                                    fp_params = getattr(dataflow, 'func_fp_params', None)
+                                    if fp_params is None and hasattr(dataflow, 'state'):
+                                        fp_params = getattr(dataflow.state, 'func_fp_params', None)
+                                    fp_positions = fp_params.get(call_name, set()) if fp_params else set()
+                                    if not fp_positions or arg_idx in fp_positions:
+                                        dataflow.register_callback(target)
+                                        edges.append(CallEdge(
+                                            caller=caller or '<registration>',
+                                            callee=target,
+                                            caller_file=filepath,
+                                            callee_file='',
+                                            type=CallType.INDIRECT,
+                                            indirect_kind='callback_reg',
+                                            caller_line=node.start_point[0] + 1,
+                                        ))
                                 elif arg_idx < len(param_names):
                                     pname = param_names[arg_idx]
                                     if pname not in param_mappings:
@@ -434,16 +503,21 @@ def analyze(
                                 if target in symbol_names:
                                     arg_idx = comma_count
                                     if _is_registration(call_name):
-                                        dataflow.register_callback(target)
-                                        edges.append(CallEdge(
-                                            caller=caller or '<registration>',
-                                            callee=target,
-                                            caller_file=filepath,
-                                            callee_file='',
-                                            type=CallType.INDIRECT,
-                                            indirect_kind='callback_reg',
-                                            caller_line=node.start_point[0] + 1,
-                                        ))
+                                        fp_params = getattr(dataflow, 'func_fp_params', None)
+                                        if fp_params is None and hasattr(dataflow, 'state'):
+                                            fp_params = getattr(dataflow.state, 'func_fp_params', None)
+                                        fp_positions = fp_params.get(call_name, set()) if fp_params else set()
+                                        if not fp_positions or arg_idx in fp_positions:
+                                            dataflow.register_callback(target)
+                                            edges.append(CallEdge(
+                                                caller=caller or '<registration>',
+                                                callee=target,
+                                                caller_file=filepath,
+                                                callee_file='',
+                                                type=CallType.INDIRECT,
+                                                indirect_kind='callback_reg',
+                                                caller_line=node.start_point[0] + 1,
+                                            ))
                                     elif arg_idx < len(param_names):
                                         pname = param_names[arg_idx]
                                         if pname not in param_mappings:
