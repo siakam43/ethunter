@@ -144,15 +144,15 @@ def test_et_bench_report():
 
     # FPR ceilings — start at current baseline, lowered as fixes land
     fpr_ceilings = {
-        'fnptr-callback': 0.63,
+        'fnptr-callback': 0.62,
         'fnptr-cast': 0.63,
         'fnptr-global-array': 0.01,
-        'fnptr-global-struct': 0.63,
+        'fnptr-global-struct': 0.46,
         'fnptr-global-struct-array': 0.47,
-        'fnptr-library': 0.28,
+        'fnptr-library': 0.20,
         'fnptr-only': 0.08,
-        'fnptr-struct': 0.43,
-        'fnptr-varargs': 0.76,
+        'fnptr-struct': 0.41,
+        'fnptr-varargs': 0.53,
     }
     for category, ceiling in fpr_ceilings.items():
         if category in results:
@@ -1468,3 +1468,72 @@ void setup(void) {
     cr_callees = {e.callee for e in callback_reg_edges}
     assert "my_cb" in cr_callees, \
         f"callback_reg for my_cb should be retained (no field_call): {cr_callees}"
+
+
+def test_fix_a1_callback_param_suppress_when_field_covered():
+    """callback_param edges with callee also in field_call should be suppressed."""
+    import tree_sitter_c as tsc
+    from tree_sitter import Language, Parser
+
+    source = b'''
+typedef void (*handler_fn)(int x);
+
+static void h_a(int x) { (void)x; }
+static void h_b(int x) { (void)x; }
+
+struct ctx { handler_fn handler; };
+
+static void register_fn(struct ctx *c, handler_fn fn) {
+    c->handler = fn;
+}
+
+static void wrapper_a(struct ctx *c, handler_fn fn) {
+    register_fn(c, fn);
+}
+
+static void wrapper_b(struct ctx *c, handler_fn fn) {
+    register_fn(c, fn);
+}
+
+void caller_a(void) {
+    struct ctx c;
+    wrapper_a(&c, h_a);
+}
+
+void caller_b(void) {
+    struct ctx c;
+    wrapper_b(&c, h_b);
+}
+
+void dispatch(struct ctx *c) {
+    if (c->handler)
+        c->handler(42);
+}
+'''
+    lang = Language(tsc.language())
+    parser = Parser(lang)
+    tree = parser.parse(source)
+
+    from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
+    from ethunter.analyzer.dataflow import VariableState
+    from ethunter.analyzer.orchestrator import run_all_analyses
+
+    st = SymbolTable()
+    for func in extract_functions(tree, "test.c"):
+        st.add_function(func)
+    df = VariableState()
+
+    graph = run_all_analyses({"test.c": tree}, st, df)
+
+    fc_pairs = {(e.caller, e.callee) for e in graph.edges if e.indirect_kind == "field_call"}
+    assert ("dispatch", "h_a") in fc_pairs, "field_call dispatch -> h_a should work"
+    assert ("dispatch", "h_b") in fc_pairs, "field_call dispatch -> h_b should work"
+
+    cp_edges = [e for e in graph.edges if e.indirect_kind == "callback_param"]
+    cp_callees = {e.callee for e in cp_edges}
+    assert "h_a" not in cp_callees, \
+        f"callback_param for h_a should be suppressed: {cp_callees}"
+    assert "h_b" not in cp_callees, \
+        f"callback_param for h_b should be suppressed: {cp_callees}"
+
+

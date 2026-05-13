@@ -112,14 +112,15 @@ def run_all_analyses(
         for edge in edges:
             graph.add_edge(edge)
 
-    # Fix B: suppress callback_reg edges where the callee is already covered
-    # by a field_call edge (which has a more precise caller name).
+    # Fix B+A-1: suppress callback edges where callee is covered by field_call
+    # (field_call provides a more precise caller name via struct dispatch).
     field_callees = {e.callee for e in graph.edges
                      if e.type == CallType.INDIRECT and e.indirect_kind == 'field_call'}
     if field_callees:
         filtered = []
         for edge in graph.edges:
-            if edge.indirect_kind == 'callback_reg' and edge.callee in field_callees:
+            if edge.indirect_kind in ('callback_reg', 'callback_param') \
+                    and edge.callee in field_callees:
                 continue
             filtered.append(edge)
         graph.edges = filtered
