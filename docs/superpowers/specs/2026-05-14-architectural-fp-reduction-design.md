@@ -20,59 +20,70 @@
 
 ---
 
-## Fix 1: Dataflow 类型溯源（#1，影响 ~98 field_call FPs）
+## Fix 1: Dataflow Type+Name Key（#1，98 field_call FPs）
 
 ### 设计
 
-将 `<gstruct:>` dataflow key 从**变量名**改为**struct 类型名**。消除 suffix 扫描，改为精确 key 查找。
+将 `<gstruct:>` dataflow key 从 `<gstruct:var.field>` 改为 `<gstruct:type.var.field>`——type+name 复合 key。
 
 ```
-现状: <gstruct:obj_a.handler> → {handler_a}  // 变量名空间
-      <gstruct:obj_b.handler> → {handler_b}  // 同名字段无法区分 struct 类型
+现状: <gstruct:obj_a.handler> -> {handler_a}
+      <gstruct:obj_b.handler> -> {handler_b}
+      // 不同类型同名字段无法区分
 
-改为: <gstruct:type_a.handler> → {handler_a, ...}  // 类型名空间
-      <gstruct:type_b.handler> → {handler_b, ...}  // 完全隔离不同类型
+改为: <gstruct:type_a.obj_a.handler> -> {handler_a}
+      <gstruct:type_b.obj_b.handler> -> {handler_b}
+      // type 前缀区分不同类型，var 后缀区分同类型实例
+```
+
+**suffix 扫描改进**：从全局 `key.endswith()` 改为 type 前缀限定：
+
+```python
+# OLD: 无差别全局扫描
+for key, vals in dataflow.targets.items():
+    if key.endswith(f'.{fieldname}>') and vals:
+        targets.update(vals)
+
+# NEW: type 前缀限定扫描
+type_prefix = f'<gstruct:{struct_type}.'
+for key, vals in dataflow.targets.items():
+    if key.startswith(type_prefix) and key.endswith(f'.{fieldname}>') and vals:
+        targets.update(vals)
+```
+
+**example_6 效果**：
+
+```
+现状: <gstruct:command_table.func> -> 36 zfs_do_*
+      <gstruct:command_table.help> -> 36 HELP_*     <- 整数常量误存
+      <garray:command_table>       -> 72（合并）    <- 引入 HELP_* FPs
+
+改后: <gstruct:zfs_command_t.command_table.func> -> 36 zfs_do_*
+      suffix scan 限定 startswith('<gstruct:zfs_command_t.')
+      HELP_* 不会混入。不再需要 <garray:> fallback。
 ```
 
 ### 涉及模块
 
 | 模块 | 变更 |
 |------|------|
-| `initializer_assign.py` | 写 `<gstruct:type.field>` 替代 `<gstruct:var.field>` |
-| `param_assign.py` | `_propagate_call_site` / `resolve_call_site_param` 中的 `<gstruct:>` key 改用类型名 |
-| `field_call.py` | 替换两处 suffix wildcard 扫描为精确 `<gstruct:type.field>` key 查找 |
-| `dataflow.py` | 新增 `var_to_type` 映射字典（变量名→struct 类型名） |
-| `symbol_table.py` | 新增 `record_var_type(var_name, struct_type)` 方法 |
+| `initializer_assign.py` | 写 `<gstruct:type.var.field>` 替代 `<gstruct:var.field>` |
+| `param_assign.py` | `_propagate_call_site` key 改用 type.var.field |
+| `field_call.py` | suffix scan 加 type 前缀限定 |
+| `dataflow.py` | 新增 `var_to_type` dict |
+| `symbol_table.py` | 新增 `record_var_type(var_name, struct_type)` |
 
-### 变量→类型映射来源
+### 变量->类型映射
 
-- `initializer_assign`: 处理 `struct type_a obj_a = {...}` 时可从 AST 声明提取变量名和类型名
-- `direct_assign`: 处理 `obj = &existing_obj` 时可通过指针解析传递类型
-- 全局变量声明：从翻译单元的 declaration 节点提取
-
-### field_call 精确 key 查找替代 suffix scan
-
-```python
-# OLD (~line 178-180, field_call.py):
-# 扫描所有以 .fieldname> 结尾的 key
-for key, vals in dataflow.targets.items():
-    if key.endswith(f'.{last_part}>') and vals:
-        targets.update(vals)
-
-# NEW:
-# 需要知道 field_path 对应 struct 的 type。从 dataflow.var_to_type 获取
-base_var = field_path.split('.')[0]
-struct_type = dataflow.var_to_type.get(base_var, base_var)
-targets = dataflow.resolve(f'<gstruct:{struct_type}.{last_part}>')
-```
+- `initializer_assign`: 从 AST 声明提取 `struct type_a obj_a = {...}`
+- `direct_assign`: 指针解析传递类型
+- 全局变量: translation_unit 的 declaration 节点
 
 ### 召回安全性
 
-- 同类型不同变量实例的 targets 会合并——这是**正确**行为（同类型应有相同可能的 fnptr targets）
-- 不同类型同名字段完全隔离——消除 suffix collision
-- 如果 var_to_type 映射缺失，降级为原 suffix 扫描（保守）
-
----
+- 同类型不同实例通过 type 前缀关联，不跨类型污染
+- 不同实例由 var 后缀独立，不错误合并
+- var_to_type 缺失时降级为原 suffix 扫描
 
 ## Fix 3: 行为注册检测替代启发式匹配（#3，影响 ~28 callback_reg FPs）
 
