@@ -1297,3 +1297,72 @@ void caller3(void) { forward(h3); }
         f"Expected <=6 callback_param edges, got {len(callback_param)}: {pairs}"
 
 
+
+
+def test_fix_a_fallback_prefixed_resolve():
+    """Pass 1 fallback branch resolves via prefixed key, not polluted bare key."""
+    import tree_sitter_c as tsc
+    from tree_sitter import Language, Parser
+
+    source = b'''
+typedef void (*handler_fn)(int x);
+
+static void h_a(int x) { (void)x; }
+static void h_b(int x) { (void)x; }
+
+struct ctx { handler_fn handler; };
+
+static void register_legacy(struct ctx *c, handler_fn fn) {
+    c->handler = fn;
+}
+
+static void wrapper_a(struct ctx *c, handler_fn fn) {
+    register_legacy(c, fn);
+}
+
+static void wrapper_b(struct ctx *c, handler_fn fn) {
+    register_legacy(c, fn);
+}
+
+void caller_a(void) {
+    struct ctx c;
+    wrapper_a(&c, h_a);
+}
+
+void caller_b(void) {
+    struct ctx c;
+    wrapper_b(&c, h_b);
+}
+
+void dispatch(struct ctx *c) {
+    if (c->handler)
+        c->handler(42);
+}
+'''
+    lang = Language(tsc.language())
+    parser = Parser(lang)
+    tree = parser.parse(source)
+
+    from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
+    from ethunter.analyzer.dataflow import VariableState
+    from ethunter.analyzer.orchestrator import run_all_analyses
+
+    st = SymbolTable()
+    for func in extract_functions(tree, "test.c"):
+        st.add_function(func)
+    df = VariableState()
+
+    graph = run_all_analyses({"test.c": tree}, st, df)
+    callback_param = [e for e in graph.edges if e.indirect_kind == "callback_param"]
+    pairs = {(e.caller, e.callee) for e in callback_param}
+
+    assert ("wrapper_a", "h_b") not in pairs, \
+        f"wrapper_a should NOT connect to h_b (bare key pollution): {pairs}"
+
+    assert ("wrapper_b", "h_a") not in pairs, \
+        f"wrapper_b should NOT connect to h_a (bare key pollution): {pairs}"
+
+    field_call_edges = [e for e in graph.edges if e.indirect_kind == "field_call"]
+    fc_pairs = {(e.caller, e.callee) for e in field_call_edges}
+    assert ("dispatch", "h_a") in fc_pairs, "field_call dispatch -> h_a should work"
+    assert ("dispatch", "h_b") in fc_pairs, "field_call dispatch -> h_b should work"

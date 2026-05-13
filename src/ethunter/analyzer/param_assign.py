@@ -459,7 +459,9 @@ def analyze(
                                 )
                             else:
                                 # Fallback: check dataflow for local var assigned to fnptr
-                                df_targets = dataflow.resolve(target)
+                                df_targets = dataflow.resolve(f'{caller}:{target}')
+                                if not df_targets:
+                                    df_targets = dataflow.resolve(target)
                                 if df_targets and arg_idx < len(param_names):
                                     pname = param_names[arg_idx]
                                     if pname not in param_mappings:
