@@ -304,6 +304,99 @@ def _register_phase(
 
         _scan_returns(tree.root_node)
 
+    # === Classify fnptr param usage ===
+    param_usage: dict[tuple[str, int], str] = {}
+    if func_fp_params:
+        _classify_param_usage(tree.root_node, func_fp_params, func_params, param_usage)
+        # Store on engine (cross-file accumulation)
+        if hasattr(dataflow, 'state'):
+            if not hasattr(dataflow.state, 'param_usage'):
+                dataflow.state.param_usage = {}
+            dataflow.state.param_usage.update(param_usage)
+        else:
+            if not hasattr(dataflow, 'param_usage'):
+                dataflow.param_usage = {}
+            dataflow.param_usage.update(param_usage)
+
+
+def _classify_param_usage(node, func_fp_params, func_params, param_usage):
+    """Classify each fnptr param's usage: 'caller', 'forwarder', or 'storage'.
+
+    Caller: param(args) or (*param)(args) in function body
+    Forwarder: other_func(param) in function body (param forwarded as arg)
+    Storage: field = param or already in param_fields (handled by _register_phase)
+    """
+    def _scan(n):
+        if n.type == 'function_definition':
+            decl = _find_child(n, 'function_declarator')
+            if not decl:
+                for c in n.children:
+                    if c.type in ('pointer_declarator', 'parenthesized_declarator'):
+                        d = _find_child(c, 'function_declarator')
+                        if d: decl = d; break
+            if decl:
+                fname, _ = _find_func_name_from_decl(decl)
+                if fname and fname in func_fp_params:
+                    fp_positions = func_fp_params[fname]
+                    body = _find_child(n, 'compound_statement')
+                    if body:
+                        # Find all call expressions in body
+                        def _scan_calls(cn, results):
+                            if cn.type == 'call_expression':
+                                func_node = cn.child_by_field_name('function') or cn.children[0]
+                                called_name = None
+                                if func_node and func_node.type == 'identifier' and func_node.text:
+                                    called_name = func_node.text.decode('utf-8')
+                                elif func_node and func_node.type == 'parenthesized_expression':
+                                    for cc in func_node.children:
+                                        if cc.type == 'pointer_expression' and cc.children:
+                                            inner = cc.children[-1]
+                                            if inner.type == 'identifier' and inner.text:
+                                                called_name = '*' + inner.text.decode('utf-8')
+                                elif func_node and func_node.type == 'pointer_expression' and func_node.children:
+                                    inner = func_node.children[-1]
+                                    if inner.type == 'identifier' and inner.text:
+                                        called_name = '*' + inner.text.decode('utf-8')
+
+                                args = cn.child_by_field_name('arguments')
+                                arg_names = []
+                                if args:
+                                    for cc in args.children:
+                                        if cc.type == 'identifier' and cc.text:
+                                            arg_names.append(cc.text.decode('utf-8'))
+
+                                results.append((called_name, arg_names))
+                            for child in cn.children:
+                                _scan_calls(child, results)
+
+                        calls = []
+                        _scan_calls(body, calls)
+
+                        # Classify each fnptr param position
+                        params = func_params.get(fname, [])
+                        for pos in fp_positions:
+                            if pos >= len(params):
+                                continue
+                            pname = params[pos]
+                            role = 'unknown'
+                            for called_name, arg_names in calls:
+                                # Check if fnptr is directly called: cb(args) or (*cb)(args)
+                                if called_name == pname or called_name == '*' + pname:
+                                    role = 'caller'
+                                    break
+                                # Check if fnptr is forwarded: other_func(cb)
+                                if pname in arg_names:
+                                    if role != 'caller':
+                                        role = 'forwarder'
+                            key = (fname, pos)
+                            if key not in param_usage:
+                                param_usage[key] = role
+
+        for child in n.children:
+            _scan(child)
+
+    _scan(node)
+
 
 def _propagate_call_site(
     call_name: str, arg_idx: int, target: str,
@@ -426,16 +519,24 @@ def analyze(
                                         fp_params = getattr(dataflow.state, 'func_fp_params', None)
                                     fp_positions = fp_params.get(call_name, set()) if fp_params else set()
                                     if not fp_positions or arg_idx in fp_positions:
-                                        dataflow.register_callback(target)
-                                        edges.append(CallEdge(
-                                            caller=caller or '<registration>',
-                                            callee=target,
-                                            caller_file=filepath,
-                                            callee_file='',
-                                            type=CallType.INDIRECT,
-                                            indirect_kind='callback_reg',
-                                            caller_line=node.start_point[0] + 1,
-                                        ))
+                                        # Fix 3: check param_usage — suppress for forwarder/storage
+                                        usage = None
+                                        pu = getattr(dataflow, 'param_usage', None)
+                                        if pu is None and hasattr(dataflow, 'state'):
+                                            pu = getattr(dataflow.state, 'param_usage', None)
+                                        if pu:
+                                            usage = pu.get((call_name, arg_idx), 'unknown')
+                                        if usage not in ('forwarder', 'storage'):
+                                            dataflow.register_callback(target)
+                                            edges.append(CallEdge(
+                                                caller=caller or '<registration>',
+                                                callee=target,
+                                                caller_file=filepath,
+                                                callee_file='',
+                                                type=CallType.INDIRECT,
+                                                indirect_kind='callback_reg',
+                                                caller_line=node.start_point[0] + 1,
+                                            ))
                                     if arg_idx < len(param_names):
                                         pname = param_names[arg_idx]
                                         dataflow.assign(f'{call_name}:{pname}', target)
@@ -491,16 +592,23 @@ def analyze(
                                         fp_params = getattr(dataflow.state, 'func_fp_params', None)
                                     fp_positions = fp_params.get(call_name, set()) if fp_params else set()
                                     if not fp_positions or arg_idx in fp_positions:
-                                        dataflow.register_callback(target)
-                                        edges.append(CallEdge(
-                                            caller=caller or '<registration>',
-                                            callee=target,
-                                            caller_file=filepath,
-                                            callee_file='',
-                                            type=CallType.INDIRECT,
-                                            indirect_kind='callback_reg',
-                                            caller_line=node.start_point[0] + 1,
-                                        ))
+                                        usage = None
+                                        pu = getattr(dataflow, 'param_usage', None)
+                                        if pu is None and hasattr(dataflow, 'state'):
+                                            pu = getattr(dataflow.state, 'param_usage', None)
+                                        if pu:
+                                            usage = pu.get((call_name, arg_idx), 'unknown')
+                                        if usage not in ('forwarder', 'storage'):
+                                            dataflow.register_callback(target)
+                                            edges.append(CallEdge(
+                                                caller=caller or '<registration>',
+                                                callee=target,
+                                                caller_file=filepath,
+                                                callee_file='',
+                                                type=CallType.INDIRECT,
+                                                indirect_kind='callback_reg',
+                                                caller_line=node.start_point[0] + 1,
+                                            ))
                                 elif arg_idx < len(param_names):
                                     pname = param_names[arg_idx]
                                     if pname not in param_mappings:

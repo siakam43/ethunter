@@ -1597,3 +1597,28 @@ void dispatcher(void) {
 
 
 
+
+def test_fix3_behavioral_registration():
+    """Registration matching functions that forward should NOT emit callback_reg."""
+    import tree_sitter_c as tsc
+    from tree_sitter import Language, Parser
+    source = b'''
+typedef void (*cb_t)(int);
+static void my_cb(int x) { (void)x; }
+static void real_dispatcher(cb_t cb) { cb(42); }
+/* Name matches _is_registration, but only forwards the fnptr */
+static void register_handler(cb_t cb) { real_dispatcher(cb); }
+void setup(void) { register_handler(my_cb); }
+'''
+    lang = Language(tsc.language())
+    parser = Parser(lang)
+    tree = parser.parse(source)
+    from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
+    from ethunter.analyzer.dataflow import VariableState
+    from ethunter.analyzer.orchestrator import run_all_analyses
+    st = SymbolTable()
+    for func in extract_functions(tree, "test.c"): st.add_function(func)
+    df = VariableState()
+    graph = run_all_analyses({"test.c": tree}, st, df)
+    cr = {e.callee for e in graph.edges if e.indirect_kind == "callback_reg"}
+    assert "my_cb" not in cr, f"register_handler forwards, should not emit: {cr}"
