@@ -144,7 +144,7 @@ def test_et_bench_report():
 
     # FPR ceilings — start at current baseline, lowered as fixes land
     fpr_ceilings = {
-        'fnptr-callback': 0.69,
+        'fnptr-callback': 0.67,
         'fnptr-cast': 0.63,
         'fnptr-global-array': 0.01,
         'fnptr-global-struct': 0.46,
@@ -813,8 +813,9 @@ def test_param_callback_of_callback():
 
     graph = run_all_analyses({"test.c": tree}, st, df)
     pairs = {(e.caller, e.callee) for e in graph.edges if e.type.value == 'indirect'}
-    assert ('caller_func', 'my_relocate') in pairs, \
-        f"Expected caller_func -> my_relocate, got: {pairs}"
+    # Fix 2: field_call callback-of-callback uses ftarget (my_note_fn) as caller
+    assert ('my_note_fn', 'my_relocate') in pairs, \
+        f"Expected my_note_fn -> my_relocate, got: {pairs}"
 
 
 def test_fnptr_pointer_global():
@@ -1055,10 +1056,7 @@ def _category_recall(category):
 
 def test_fnptr_callback_full_recall():
     matched, total, recall, _ = _category_recall('fnptr-callback')
-    # Known gap: 3 edges need Pass 3 enhancement (typedef fnptr + inner call detection)
-    # example_8: (_pqsort, sort_gp_asc), (_pqsort, sort_gp_desc)
-    # example_14: (gt_pch_p_14lang_tree_node, relocate_ptrs)
-    assert recall >= 30/33, f"fnptr-callback recall={recall:.2%} ({matched}/{total})"
+    assert recall == 1.0, f"fnptr-callback recall={recall:.2%} ({matched}/{total})"
 
 def test_fnptr_cast_full_recall():
     matched, total, recall, _ = _category_recall('fnptr-cast')
@@ -1540,3 +1538,59 @@ void dispatch(struct ctx *c) {
         f"callback_param for h_b should be suppressed: {cp_callees}"
 
 
+
+
+
+
+
+def test_fix2_field_call_callback_of_callback_caller():
+    """field_call callback-of-callback caller should be ftarget, not enclosing func."""
+    import tree_sitter_c as tsc
+    from tree_sitter import Language, Parser
+
+    source = b'''
+typedef void (*note_fn)(void *, void *, void *);
+
+static void relocate(void *a, void *b, void *c) { (void)a; (void)b; (void)c; }
+
+struct ptr_data {
+    void *obj;
+    note_fn note_ptr_fn;
+    void *cookie;
+};
+
+static void target_func(void *obj, void *x, note_fn op, void *cookie) {
+    op(obj, x, cookie);
+}
+
+static struct ptr_data slot;
+
+void dispatcher(void) {
+    slot.note_ptr_fn = target_func;
+    if (slot.note_ptr_fn)
+        slot.note_ptr_fn(slot.obj, slot.cookie, relocate);
+}
+'''
+    lang = Language(tsc.language())
+    parser = Parser(lang)
+    tree = parser.parse(source)
+
+    from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
+    from ethunter.analyzer.dataflow import VariableState
+    from ethunter.analyzer.orchestrator import run_all_analyses
+
+    st = SymbolTable()
+    for func in extract_functions(tree, "test.c"):
+        st.add_function(func)
+    df = VariableState()
+
+    graph = run_all_analyses({"test.c": tree}, st, df)
+
+    cp_edges = [(e.caller, e.callee) for e in graph.edges if e.indirect_kind == "callback_param"]
+    pairs = set(cp_edges)
+
+    assert ("target_func", "relocate") in pairs, \
+        f"target_func -> relocate missing: {pairs}"
+
+    assert ("dispatcher", "relocate") not in pairs, \
+        f"dispatcher should not be caller for relocate: {pairs}"

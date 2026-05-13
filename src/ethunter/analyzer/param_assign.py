@@ -629,9 +629,10 @@ def analyze(
                             if cn == enclosing_func and ai == arg_idx:
                                 targets.update(tgs)
 
-                # Fallback to merged param_mappings for cross-file / missing func_params
-                if not targets:
-                    targets = param_mappings.get(call_target_name, set())
+                # Always merge param_mappings (per-call-site may have partial results)
+                pm_targets = param_mappings.get(call_target_name, set())
+                if pm_targets:
+                    targets = targets | pm_targets
 
                 if targets:
                     for target in targets:

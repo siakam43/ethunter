@@ -236,7 +236,7 @@ def analyze(
                                                 actual = inner.text.decode('utf-8')
                                         if actual and actual in symbol_names:
                                             edges.append(CallEdge(
-                                                caller=caller or '<unknown>',
+                                                caller=ftarget,
                                                 callee=actual,
                                                 caller_file=filepath,
                                                 callee_file='',
