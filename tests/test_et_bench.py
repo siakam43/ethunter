@@ -144,12 +144,12 @@ def test_et_bench_report():
 
     # FPR ceilings — start at current baseline, lowered as fixes land
     fpr_ceilings = {
-        'fnptr-callback': 0.80,
+        'fnptr-callback': 0.65,
         'fnptr-cast': 0.63,
         'fnptr-global-array': 0.01,
         'fnptr-global-struct': 0.90,
         'fnptr-global-struct-array': 0.47,
-        'fnptr-library': 0.35,
+        'fnptr-library': 0.33,
         'fnptr-only': 0.08,
         'fnptr-struct': 0.47,
         'fnptr-varargs': 0.76,
