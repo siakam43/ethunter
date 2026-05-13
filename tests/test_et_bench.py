@@ -1622,3 +1622,4 @@ void setup(void) { register_handler(my_cb); }
     graph = run_all_analyses({"test.c": tree}, st, df)
     cr = {e.callee for e in graph.edges if e.indirect_kind == "callback_reg"}
     assert "my_cb" not in cr, f"register_handler forwards, should not emit: {cr}"
+
