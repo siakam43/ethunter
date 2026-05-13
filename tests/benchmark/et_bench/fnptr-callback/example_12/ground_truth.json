@@ -1,11 +1,11 @@
 {
   "examples": [
     {
-      "caller": "Curl_auth_create_digest_http_message",
+      "caller": "auth_create_digest_http_message",
       "callee": "Curl_md5it"
     },
     {
-      "caller": "Curl_auth_create_digest_http_message",
+      "caller": "auth_create_digest_http_message",
       "callee": "Curl_sha256it"
     }
   ]

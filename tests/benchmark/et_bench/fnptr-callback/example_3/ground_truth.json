@@ -1,11 +1,11 @@
 {
   "examples": [
     {
-      "caller": "nfs_is_shared_impl",
+      "caller": "nfs_process_exports",
       "callee": "nfs_is_shared_cb"
     },
     {
-      "caller": "nfs_copy_entries",
+      "caller": "nfs_process_exports",
       "callee": "nfs_copy_entries_cb"
     }
   ]

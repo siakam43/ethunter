@@ -1,35 +1,31 @@
 {
   "examples": [
     {
-      "caller": "ccp_fold",
+      "caller": "gimple_fold_stmt_to_constant_1",
       "callee": "valueize_op"
     },
     {
-      "caller": "copy_prop_visit_assignment",
+      "caller": "gimple_fold_stmt_to_constant_1",
       "callee": "valueize_val"
     },
     {
-      "caller": "back_propagate_equivalences",
+      "caller": "gimple_fold_stmt_to_constant_1",
       "callee": "dom_valueize"
     },
     {
-      "caller": "try_to_simplify",
+      "caller": "gimple_fold_stmt_to_constant_1",
       "callee": "vn_valueize"
     },
     {
-      "caller": "visit_stmt",
-      "callee": "vn_valueize"
-    },
-    {
-      "caller": "jt_state_register_equivs_stmt",
+      "caller": "gimple_fold_stmt_to_constant_1",
       "callee": "threadedge_valueize"
     },
     {
-      "caller": "pointer_equiv_analyzer_visit_stmt",
+      "caller": "gimple_fold_stmt_to_constant_1",
       "callee": "pta_valueize"
     },
     {
-      "caller": "object_sizes_execute",
+      "caller": "gimple_fold_stmt_to_constant_1",
       "callee": "do_valueize"
     }
   ]

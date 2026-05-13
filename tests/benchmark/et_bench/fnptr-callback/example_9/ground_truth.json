@@ -1,11 +1,11 @@
 {
   "examples": [
     {
-      "caller": "addReplyCommandInfo",
+      "caller": "addReplyCommandSubCommands",
       "callee": "addReplyCommandInfo"
     },
     {
-      "caller": "addReplyCommandDocs",
+      "caller": "addReplyCommandSubCommands",
       "callee": "addReplyCommandDocs"
     }
   ]

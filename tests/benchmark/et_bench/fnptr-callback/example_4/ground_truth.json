@@ -1,11 +1,11 @@
 {
   "examples": [
     {
-      "caller": "avcodec_find_decoder",
+      "caller": "find_codec",
       "callee": "av_codec_is_decoder"
     },
     {
-      "caller": "avcodec_find_encoder",
+      "caller": "find_codec",
       "callee": "av_codec_is_encoder"
     }
   ]

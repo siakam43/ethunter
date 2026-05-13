@@ -9,7 +9,7 @@
       "callee": "sort_gp_desc"
     },
     {
-      "caller": "sortCommandGeneric",
+      "caller": "_pqsort",
       "callee": "sortCompare"
     }
   ]

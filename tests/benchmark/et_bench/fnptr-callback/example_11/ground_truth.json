@@ -1,15 +1,7 @@
 {
   "examples": [
     {
-      "caller": "aes_encrypt_atomic",
-      "callee": "aes_xor_block"
-    },
-    {
-      "caller": "aes_encrypt_final",
-      "callee": "aes_xor_block"
-    },
-    {
-      "caller": "aes_encrypt",
+      "caller": "ccm_encrypt_final",
       "callee": "aes_xor_block"
     }
   ]
