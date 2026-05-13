@@ -1295,3 +1295,5 @@ void caller3(void) { forward(h3); }
     # Total callback_param edges: at most 6
     assert len(callback_param) <= 6, \
         f"Expected <=6 callback_param edges, got {len(callback_param)}: {pairs}"
+
+
