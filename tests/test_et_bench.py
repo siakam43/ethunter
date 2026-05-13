@@ -1233,3 +1233,65 @@ void setup(void) {
     targets_b = engine.resolve('register_b:cb')
     assert targets_b == {'handler_b'}, \
         f"register_b:cb should be {{handler_b}}, got: {targets_b}"
+
+
+def test_p0_param_callback_no_nx_m_edges():
+    """N callers × M targets should produce O(N+M) edges, not O(N×M)."""
+    import tree_sitter_c as tsc
+    from tree_sitter import Language, Parser
+
+    source = b'''
+typedef void (*cb_fn)(int x);
+
+static void h1(int x) { (void)x; }
+static void h2(int x) { (void)x; }
+static void h3(int x) { (void)x; }
+
+/* Non-registration function: receives fnptr and calls it */
+static void forward(cb_fn cb) {
+    cb(42);
+}
+
+void caller1(void) { forward(h1); }
+void caller2(void) { forward(h2); }
+void caller3(void) { forward(h3); }
+'''
+    lang = Language(tsc.language())
+    parser = Parser(lang)
+    tree = parser.parse(source)
+
+    from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
+    from ethunter.analyzer.dataflow import VariableState
+    from ethunter.analyzer.orchestrator import run_all_analyses
+
+    st = SymbolTable()
+    for func in extract_functions(tree, "test.c"):
+        st.add_function(func)
+    df = VariableState()
+
+    graph = run_all_analyses({"test.c": tree}, st, df)
+    callback_param = [e for e in graph.edges if e.indirect_kind == 'callback_param']
+
+    pairs = {(e.caller, e.callee) for e in callback_param}
+
+    # Pass 3 edges (callee body = forward)
+    assert ('forward', 'h1') in pairs
+    assert ('forward', 'h2') in pairs
+    assert ('forward', 'h3') in pairs
+
+    # Pass 4 edges (outer callers)
+    assert ('caller1', 'h1') in pairs
+    assert ('caller2', 'h2') in pairs
+    assert ('caller3', 'h3') in pairs
+
+    # No N×M cross edges: caller1 should NOT be connected to h2 or h3
+    assert ('caller1', 'h2') not in pairs, \
+        f"N×M cross edge (caller1, h2) should not exist"
+    assert ('caller1', 'h3') not in pairs, \
+        f"N×M cross edge (caller1, h3) should not exist"
+    assert ('caller2', 'h1') not in pairs, \
+        f"N×M cross edge (caller2, h1) should not exist"
+
+    # Total callback_param edges: at most 6
+    assert len(callback_param) <= 6, \
+        f"Expected <=6 callback_param edges, got {len(callback_param)}: {pairs}"

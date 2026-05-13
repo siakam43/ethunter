@@ -392,6 +392,7 @@ def analyze(
 
     # === Pass 1: collect param mappings from call sites ===
     param_mappings: dict[str, set[str]] = {}  # param_name -> {target_func, ...}
+    call_site_targets: dict[tuple[str, str, int], set[str]] = {}  # (caller, callee, arg_idx) -> {target_func, ...}
 
     def _collect_call_params(node: ts.Node) -> None:
         if node.type == 'call_expression':
@@ -447,6 +448,11 @@ def analyze(
                                         param_mappings[pname].add(target)
                                         dataflow.assign(f'{call_name}:{pname}', target)
                                         dataflow.assign(pname, target)
+                                        # Per-call-site tracking (P0)
+                                        cs_key = (caller or '<unknown>', call_name, arg_idx)
+                                        if cs_key not in call_site_targets:
+                                            call_site_targets[cs_key] = set()
+                                        call_site_targets[cs_key].add(target)
                                 _propagate_call_site(
                                     call_name, arg_idx, target,
                                     dataflow, symbol_names
@@ -459,6 +465,11 @@ def analyze(
                                     if pname not in param_mappings:
                                         param_mappings[pname] = set()
                                     param_mappings[pname].update(df_targets)
+                                    # Also track per-call-site (P0)
+                                    cs_key = (caller or '<unknown>', call_name, arg_idx)
+                                    if cs_key not in call_site_targets:
+                                        call_site_targets[cs_key] = set()
+                                    call_site_targets[cs_key].update(df_targets)
                         elif c.type == 'cast_expression':
                             # Extract identifier from nested cast
                             extracted = None
@@ -527,6 +538,11 @@ def analyze(
                                         param_mappings[pname].add(target)
                                         dataflow.assign(f'{call_name}:{pname}', target)
                                         dataflow.assign(pname, target)
+                                        # Per-call-site tracking (P0)
+                                        cs_key = (caller or '<unknown>', call_name, arg_idx)
+                                        if cs_key not in call_site_targets:
+                                            call_site_targets[cs_key] = set()
+                                        call_site_targets[cs_key].add(target)
                                     _propagate_call_site(
                                         call_name, arg_idx, target,
                                         dataflow, symbol_names
@@ -578,9 +594,7 @@ def analyze(
                     )
 
     # === Pass 3: detect calls through function pointer parameters ===
-    # When a call-site passes a function as arg N, and the callee calls that param,
-    # emit edges from the call-site's enclosing function to the actual target.
-    call_site_edges: list[tuple[str, str, str, int]] = []  # (caller, callee, filepath, line)
+    call_site_edges: list[tuple[str, str, str, int]] = []  # (caller, target, filepath, line)
 
     def _detect_param_calls(node: ts.Node) -> None:
         if node.type == 'call_expression':
@@ -589,7 +603,6 @@ def analyze(
             if func_node and func_node.type == 'identifier' and func_node.text:
                 call_target_name = func_node.text.decode('utf-8')
             elif func_node and func_node.type == 'parenthesized_expression':
-                # (*fp)(args) — extract inner identifier from pointer_expression
                 for c in func_node.children:
                     if c.type == 'pointer_expression' and c.children:
                         inner = c.children[-1]
@@ -597,16 +610,33 @@ def analyze(
                             call_target_name = inner.text.decode('utf-8')
                             break
             elif func_node and func_node.type == 'pointer_expression' and func_node.children:
-                # *fp(args) — extract identifier
                 inner = func_node.children[-1]
                 if inner.type == 'identifier' and inner.text:
                     call_target_name = inner.text.decode('utf-8')
+
             if call_target_name:
-                targets = param_mappings.get(call_target_name)
+                enclosing_func = find_enclosing_function(node, tree.root_node)
+                targets = set()
+
+                # Per-call-site resolution: query call_site_targets by callee + arg_idx
+                if enclosing_func and enclosing_func in func_params:
+                    params = func_params[enclosing_func]
+                    if call_target_name in params:
+                        arg_idx = params.index(call_target_name)
+                        for (clr, cn, ai), tgs in call_site_targets.items():
+                            if cn == enclosing_func and ai == arg_idx:
+                                targets.update(tgs)
+
+                # Fallback to merged param_mappings for cross-file / missing func_params
+                if not targets:
+                    targets = param_mappings.get(call_target_name, set())
+
                 if targets:
-                    caller = find_enclosing_function(node, tree.root_node)
                     for target in targets:
-                        call_site_edges.append((caller or '<unknown>', target, filepath, node.start_point[0] + 1))
+                        call_site_edges.append(
+                            (enclosing_func or '<unknown>', target, filepath,
+                             node.start_point[0] + 1))
+
         for child in node.children:
             _detect_param_calls(child)
 
@@ -625,74 +655,21 @@ def analyze(
         ))
 
     # === Pass 4: emit edges from call-site to actual targets ===
-    call_targets: dict[tuple[str, str], tuple[str, int]] = {}  # (outer_caller, target) -> (filepath, line)
-
-    def _collect_call_args_pass4(node: ts.Node) -> None:
-        if node.type == 'call_expression':
-            func_node = node.child_by_field_name('function') or node.children[0]
-            if func_node and func_node.text:
-                call_name = func_node.text.decode('utf-8')
-                args = node.child_by_field_name('arguments')
-                if args:
-                    caller = find_enclosing_function(node, tree.root_node)
-                    param_names = func_params.get(call_name, [])
-                    # Build arg list with proper positions
-                    arg_idx = 0
-                    for c in args.children:
-                        if c.type == '(':
-                            continue
-                        if c.type == ')':
-                            break
-                        if c.type == ',':
-                            continue
-                        if c.type == 'identifier' and c.text:
-                            target = c.text.decode('utf-8')
-                            if target in symbol_names and arg_idx < len(param_names):
-                                pname = param_names[arg_idx]
-                                targets = param_mappings.get(pname)
-                                if targets:
-                                    for t in targets:
-                                        key = (caller or '<unknown>', t)
-                                        if key not in call_targets:
-                                            call_targets[key] = (filepath, node.start_point[0] + 1)
-                            elif arg_idx < len(param_names):
-                                # Fallback: check dataflow for local var assigned to fnptr
-                                df_targets = dataflow.resolve(target)
-                                pname = param_names[arg_idx]
-                                mappings = param_mappings.get(pname, set())
-                                if df_targets or mappings:
-                                    keys_source = df_targets | mappings
-                                    for t in keys_source:
-                                        key = (caller or '<unknown>', t)
-                                        if key not in call_targets:
-                                            call_targets[key] = (filepath, node.start_point[0] + 1)
-                        elif c.type == 'pointer_expression' and c.children:
-                            inner = c.children[-1]
-                            if inner.type == 'identifier' and inner.text:
-                                target = inner.text.decode('utf-8')
-                                if target in symbol_names and arg_idx < len(param_names):
-                                    pname = param_names[arg_idx]
-                                    targets = param_mappings.get(pname)
-                                    if targets:
-                                        for t in targets:
-                                            key = (caller or '<unknown>', t)
-                                            if key not in call_targets:
-                                                call_targets[key] = (filepath, node.start_point[0] + 1)
-                        arg_idx += 1
-        for child in node.children:
-            _collect_call_args_pass4(child)
-
-    _collect_call_args_pass4(tree.root_node)
-
-    for (caller, target), (fp, line) in call_targets.items():
-        edges.append(CallEdge(
-            caller=caller,
-            callee=target,
-            caller_file=fp,
-            callee_file='',
-            type=CallType.INDIRECT,
-            indirect_kind='callback_param',
-            caller_line=line,
-        ))
+    # Uses per-call-site resolution via call_site_targets (no NxM merge)
+    seen_pass4: set[tuple[str, str]] = set()
+    for (caller, callee, arg_idx), targets in call_site_targets.items():
+        for target in targets:
+            key = (caller, target)
+            if key not in seen_pass4:
+                seen_pass4.add(key)
+                edges.append(CallEdge(
+                    caller=caller,
+                    callee=target,
+                    caller_file=filepath,
+                    callee_file='',
+                    type=CallType.INDIRECT,
+                    indirect_kind='callback_param',
+                    caller_line=0,
+                ))
 
     return edges
