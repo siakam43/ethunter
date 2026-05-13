@@ -437,6 +437,7 @@ def analyze(
                                         ))
                                     if arg_idx < len(param_names):
                                         pname = param_names[arg_idx]
+                                        dataflow.assign(f'{call_name}:{pname}', target)
                                         dataflow.assign(pname, target)
                                 else:
                                     if arg_idx < len(param_names):
@@ -444,6 +445,7 @@ def analyze(
                                         if pname not in param_mappings:
                                             param_mappings[pname] = set()
                                         param_mappings[pname].add(target)
+                                        dataflow.assign(f'{call_name}:{pname}', target)
                                         dataflow.assign(pname, target)
                                 _propagate_call_site(
                                     call_name, arg_idx, target,
@@ -523,6 +525,7 @@ def analyze(
                                         if pname not in param_mappings:
                                             param_mappings[pname] = set()
                                         param_mappings[pname].add(target)
+                                        dataflow.assign(f'{call_name}:{pname}', target)
                                         dataflow.assign(pname, target)
                                     _propagate_call_site(
                                         call_name, arg_idx, target,
@@ -557,7 +560,9 @@ def analyze(
             for t in targets:
                 dataflow.assign(f'<struct:{field_path}>', t)
             # Prong 2: resolve via dataflow
-            df_targets = dataflow.resolve(param_name)
+            df_targets = dataflow.resolve(f'{fa.enclosing_func}:{param_name}')
+            if not df_targets:
+                df_targets = dataflow.resolve(param_name)
             if not df_targets:
                 df_targets = dataflow.resolve(f'<garray:{param_name}>')
             for t in df_targets:

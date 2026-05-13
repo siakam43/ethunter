@@ -1182,3 +1182,54 @@ void setup(void) {
     callees = {e.callee for e in callback_reg_edges}
     assert 'my_handler' in callees, \
         f"Cross-file fallback failed: expected my_handler in {callees}"
+
+
+def test_p3_param_namespace_isolation():
+    """Same param name in different functions should not cross-pollute in dataflow."""
+    import tree_sitter_c as tsc
+    from tree_sitter import Language, Parser
+
+    source = b'''
+typedef void (*cb_fn)(int x);
+
+static void handler_a(int x) { (void)x; }
+static void handler_b(int x) { (void)x; }
+
+struct ctx { cb_fn h; };
+
+/* Both use param name "cb" */
+static void register_a(struct ctx *c, cb_fn cb) {
+    c->h = cb;
+}
+static void register_b(struct ctx *c, cb_fn cb) {
+    c->h = cb;
+}
+
+void setup(void) {
+    struct ctx ca, cb2;
+    register_a(&ca, handler_a);
+    register_b(&cb2, handler_b);
+}
+'''
+    lang = Language(tsc.language())
+    parser = Parser(lang)
+    tree = parser.parse(source)
+
+    from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
+    from ethunter.analyzer.dataflow import VariableState, DataflowEngine
+    from ethunter.analyzer import param_assign
+
+    st = SymbolTable()
+    for func in extract_functions(tree, "test.c"):
+        st.add_function(func)
+    engine = DataflowEngine(state=VariableState())
+
+    param_assign.analyze(tree=tree, filepath="test.c", symbol_table=st, dataflow=engine)
+
+    targets_a = engine.resolve('register_a:cb')
+    assert targets_a == {'handler_a'}, \
+        f"register_a:cb should be {{handler_a}}, got: {targets_a}"
+
+    targets_b = engine.resolve('register_b:cb')
+    assert targets_b == {'handler_b'}, \
+        f"register_b:cb should be {{handler_b}}, got: {targets_b}"
