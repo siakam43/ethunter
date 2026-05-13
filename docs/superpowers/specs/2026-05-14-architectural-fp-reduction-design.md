@@ -133,28 +133,103 @@ else:
 
 ---
 
-## Fix 5: 阶段间反馈 — covered_callees（#5）
+## Fix 5: 前置 covered_callees 替代后处理 suppression（#5）
 
 ### 设计
 
-将 Fix B/A-1 的后处理抑制**内联化**——在 dataflow 中加 `covered_callees` 标记，让 Phase 1 产边前就能检查。
+当前 Fix B/A-1 的问题是后处理：param_assign 产边时不知道 field_call 会覆盖相同 callee，边产出后才被 orchestrator 删除。
+
+**核心思路**：将 `covered_callees` 的构建前置到 param_assign 产边之前，让产边时就能判断"这个 callee 会被 field dispatch 覆盖，不需要我产边"。
+
+### 流水线调整
+
+```
+Phase 1a:  _register_phase（param_fields 注册）
+Phase 1a.5: field_call._resolve_struct_fields（写 <gstruct:> key，不产边）
+Phase 1:   TARGET_RESOLVERS（initializer_assign 写 <gstruct:> key；
+          param_assign 第一次调用写 <gstruct:> key 和 dataflow，边丢弃）
+Phase 1.5: 从 engine.targets 的所有 <gstruct:>* key 构建 covered_callees
+Phase 1b:  param_assign 第二次调用（产 callback 边 ← 检查 covered_callees）
+Phase 2:   CALL_DETECTORS（field_call._detect_field_calls 读 <gstruct:> key 产边）
+```
+
+### field_call 拆分为两个函数
 
 ```python
-# dataflow.py DataflowEngine 新增:
-covered_callees: set[str] = field(default_factory=set)
+# field_call.py
 
-# field_call.py Phase 2 解析后:
-for target in targets:
-    dataflow.covered_callees.add(target)
+def _resolve_struct_fields(tree, filepath, symbol_table, dataflow):
+    """Phase 1a.5: 扫描 struct field assignments，写 <gstruct:> key。不产边。"""
+    symbol_names = symbol_table.all_function_names
+    for fa in collect_field_assignments(tree, unwrap_fn=getattr(dataflow, 'unwrap_cast', None)):
+        if fa.resolved_value is not None and fa.resolved_value in symbol_names:
+            dataflow.assign(f'<gstruct:{fa.field_path}>', fa.resolved_value)
 
-# param_assign.py Pass 1/3/4 产边前:
-if target not in dataflow.covered_callees:
-    edges.append(CallEdge(...))  # only emit if not already covered by field_call
+def _detect_field_calls(tree, filepath, symbol_table, dataflow):
+    """Phase 2: 检测 struct field expression calls，产 field_call 边。"""
+    # 原 analyze() 的 Pass 2 逻辑（_visit 遍历 + callback-of-callback）
+    ...
+```
+
+### orchestrator 流水线
+
+```python
+# Phase 1a
+for filepath, tree in trees.items():
+    param_assign._register_phase(tree, filepath, symbol_table, engine)
+
+# Phase 1a.5: field_call struct resolution (only writes dataflow, no edges)
+for filepath, tree in trees.items():
+    field_call._resolve_struct_fields(tree, filepath, symbol_table, engine)
+
+# Phase 1: TARGET_RESOLVERS
+# initializer_assign, direct_assign, cast_assign, param_assign all write
+# <gstruct:> keys to engine.targets. param_assign edges are discarded here.
+for filepath, tree in trees.items():
+    for resolver in TARGET_RESOLVERS:
+        resolver.analyze(tree=tree, filepath=filepath,
+                         symbol_table=symbol_table, dataflow=engine)
+
+# Phase 1.5: Build covered_callees from all <gstruct:> keys written above
+covered_callees = set()
+for key, vals in engine.targets.items():
+    if key.startswith('<gstruct:'):
+        covered_callees.update(vals)
+engine.covered_callees = covered_callees
+
+# Phase 1b: param_assign callback detection (checks covered_callees before emit)
+for filepath, tree in trees.items():
+    edges = param_assign.analyze(tree=tree, filepath=filepath,
+                                 symbol_table=symbol_table, dataflow=engine)
+    for edge in edges:
+        graph.add_edge(edge)
+
+# Phase 2: CALL_DETECTORS
+for filepath, tree in trees.items():
+    for detector in CALL_DETECTORS:
+        edges = detector.analyze(tree=tree, filepath=filepath,
+                                 symbol_table=symbol_table, dataflow=engine)
+        for edge in edges:
+            graph.add_edge(edge)
+```
+
+### param_assign 产边前检查
+
+在 `_is_registration` 和 Pass 3/4 产 callback_reg / callback_param 边前：
+
+```python
+# 如果 callee 在 covered_callees 中，field dispatch 会覆盖它
+if target in getattr(dataflow, 'covered_callees', set()):
+    continue  # field_call will dispatch this callee via struct field
 ```
 
 ### 对 orchestrator 的影响
 
-替代当前 Fix B 区域的后处理过滤——将其移到各分析器内部的产边逻辑中。orchestrator 中的 Fix B 代码可以移除。
+替代当前 Fix B 的后处理过滤器——将其从 orchestrator 中移除，改为 Phase 1a.6 的 `covered_callees` 构建。Fix B 代码删除。
+
+### 召回安全性
+
+与 Fix B 的 recall safety check 结果相同：0 GT 边丢失。`covered_callees` 仅抑制已被 struct field tracking 覆盖的 callback 边。
 
 ---
 
@@ -192,7 +267,7 @@ class CallEdge:
 |------|------|
 | `src/ethunter/analyzer/dataflow.py` | Fix 1: `var_to_type` dict + `covered_callees` set；Fix 5: covered_callees |
 | `src/ethunter/analyzer/symbol_table.py` | Fix 1: `record_var_type()` |
-| `src/ethunter/analyzer/initializer_assign.py` | Fix 1: 写 `<gstruct:type.field>` key |
+| `src/ethunter/analyzer/initializer_assign.py` | Fix 1: 写 `<gstruct:type.var.field>` key |
 | `src/ethunter/analyzer/param_assign.py` | Fix 1: `<gstruct:>` key 改用类型名；Fix 3: 行为检测替代 `_is_registration`；Fix 5: 产边前检查 covered_callees |
 | `src/ethunter/analyzer/field_call.py` | Fix 1: 精确 key 查找替代 suffix scan；Fix 5: 写入 covered_callees |
 | `src/ethunter/analyzer/orchestrator.py` | Fix 5: 移除 Fix B 后处理（已被内联替代） |
