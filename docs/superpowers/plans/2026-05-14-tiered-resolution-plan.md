@@ -423,15 +423,29 @@ class FakeStoreForTiers:
     def resolve_struct_field(self, key):
         return self.struct_fields.get(key, set()).copy()
 
+class FakeResolverForTiers:
+    """Minimal FieldResolver-like object for testing resolve_field_call."""
+    def __init__(self, store, symbol_table):
+        self._store = store
+        self._symbol_table = symbol_table
+    def _get_store(self):
+        return self._store
+    def _get_symbol_table(self):
+        return self._symbol_table
+    # resolve_field_call defined in test (imported from module)
+
 class TestResolveFieldCall:
     def test_tier1_type_aware_match(self):
         store = FakeStoreForTiers({
             "gstruct:my_type.cb": {"handler_a"}
         }, {"gstruct:my_type.cb": {"fixture.c"}})
         sym = FakeSymbolTableForTiers({("caller", "obj"): "my_type"})
-        from ethunter.analyzer.field_resolver import resolve_field_call
-        targets, conf, ev = resolve_field_call(
-            "obj.cb", "obj", "caller", "fixture.c", store, sym)
+        from ethunter.analyzer.field_resolver import FieldResolver
+        # Attach resolve_field_call to fake resolver
+        resolver = FakeResolverForTiers(store, sym)
+        resolver.resolve_field_call = FieldResolver.resolve_field_call.__get__(resolver, FakeResolverForTiers)
+        targets, conf, ev = resolver.resolve_field_call(
+            "obj.cb", "obj", "caller", "fixture.c")
         assert targets == {"handler_a"}
         assert conf == 'high'
         assert 'type-aware' in ev
@@ -440,12 +454,14 @@ class TestResolveFieldCall:
         store = FakeStoreForTiers({
             "gstruct:handler.cb": {"handler_a"}
         }, {"gstruct:handler.cb": {"fixture.c"}})
-        sym = FakeSymbolTableForTiers()  # no type info
-        from ethunter.analyzer.field_resolver import resolve_field_call
-        targets, conf, ev = resolve_field_call(
-            "handler.cb", "handler", "caller", "fixture.c", store, sym)
+        sym = FakeSymbolTableForTiers()
+        from ethunter.analyzer.field_resolver import FieldResolver
+        resolver = FakeResolverForTiers(store, sym)
+        resolver.resolve_field_call = FieldResolver.resolve_field_call.__get__(resolver, FakeResolverForTiers)
+        targets, conf, ev = resolver.resolve_field_call(
+            "handler.cb", "handler", "caller", "fixture.c")
         assert targets == {"handler_a"}
-        assert conf == 'high'  # Tier 2 hit
+        assert conf == 'high'
         assert 'exact path' in ev
 
     def test_tier3_same_file_suffix(self):
@@ -454,14 +470,16 @@ class TestResolveFieldCall:
             "gstruct:other_type.cb": {"handler_b"},
         }, {
             "gstruct:handler.cb": {"fixture.c"},
-            "gstruct:other_type.cb": {"other.c"},  # different file
+            "gstruct:other_type.cb": {"other.c"},
         })
-        sym = FakeSymbolTableForTiers()  # no type, different var name
-        from ethunter.analyzer.field_resolver import resolve_field_call
-        targets, conf, ev = resolve_field_call(
-            "obj.cb", "obj", "caller", "fixture.c", store, sym)
-        assert targets == {"handler_a"}  # only same-file match
-        assert "handler_b" not in targets  # other.c filtered out
+        sym = FakeSymbolTableForTiers()
+        from ethunter.analyzer.field_resolver import FieldResolver
+        resolver = FakeResolverForTiers(store, sym)
+        resolver.resolve_field_call = FieldResolver.resolve_field_call.__get__(resolver, FakeResolverForTiers)
+        targets, conf, ev = resolver.resolve_field_call(
+            "obj.cb", "obj", "caller", "fixture.c")
+        assert targets == {"handler_a"}
+        assert "handler_b" not in targets
         assert conf == 'medium'
         assert 'same-file' in ev
 
@@ -472,9 +490,11 @@ class TestResolveFieldCall:
             "gstruct:handler.cb": {"other.c"},
         })
         sym = FakeSymbolTableForTiers()
-        from ethunter.analyzer.field_resolver import resolve_field_call
-        targets, conf, ev = resolve_field_call(
-            "obj.cb", "obj", "caller", "fixture.c", store, sym)
+        from ethunter.analyzer.field_resolver import FieldResolver
+        resolver = FakeResolverForTiers(store, sym)
+        resolver.resolve_field_call = FieldResolver.resolve_field_call.__get__(resolver, FakeResolverForTiers)
+        targets, conf, ev = resolver.resolve_field_call(
+            "obj.cb", "obj", "caller", "fixture.c")
         assert targets == {"handler_a"}
         assert conf == 'low'
         assert 'cross-file' in ev
@@ -482,9 +502,11 @@ class TestResolveFieldCall:
     def test_returns_empty_when_no_match(self):
         store = FakeStoreForTiers()
         sym = FakeSymbolTableForTiers()
-        from ethunter.analyzer.field_resolver import resolve_field_call
-        targets, conf, ev = resolve_field_call(
-            "x.y", "x", "func", "f.c", store, sym)
+        from ethunter.analyzer.field_resolver import FieldResolver
+        resolver = FakeResolverForTiers(store, sym)
+        resolver.resolve_field_call = FieldResolver.resolve_field_call.__get__(resolver, FakeResolverForTiers)
+        targets, conf, ev = resolver.resolve_field_call(
+            "x.y", "x", "func", "f.c")
         assert targets == set()
         assert conf == 'none'
 ```
@@ -492,56 +514,67 @@ class TestResolveFieldCall:
 Run: `.venv/bin/python -m pytest tests/test_field_resolver.py::TestResolveFieldCall -v`
 Expected: FAIL — `resolve_field_call` not defined
 
-- [ ] **Step 2: Implement `resolve_field_call()`**
+- [ ] **Step 2: Implement `resolve_field_call()` as a method on FieldResolver**
 
-Add to `src/ethunter/analyzer/field_resolver.py`:
+Add to `src/ethunter/analyzer/field_resolver.py` inside the `FieldResolver` class:
 
 ```python
-def resolve_field_call(field_path: str, base_var: str,
-                       caller_func: str | None, filepath: str,
-                       store, symbol_table) -> tuple[set[str], str, str]:
-    """Resolve a struct field function pointer call via 4-tier chain.
-    
-    Returns (targets, confidence, evidence).
-    """
-    field_tail = store.compute_field_tail(field_path)
-    targets = set()
-    
-    # === Tier 1: Type-aware exact match ===
-    struct_type = None
-    if caller_func:
-        struct_type = symbol_table.get_func_var_type(caller_func, base_var)
-    if not struct_type:
-        struct_type = symbol_table.get_var_type(base_var)
-    if struct_type:
-        targets = store.resolve_struct_field(f'gstruct:{struct_type}.{field_tail}')
+    def resolve_field_call(self, field_path: str, base_var: str,
+                           caller_func: str | None, filepath: str
+                           ) -> tuple[set[str], str, str]:
+        """Resolve a struct field function pointer call via 4-tier chain.
+        
+        Returns (targets, confidence, evidence).
+        """
+        store = self._get_store()
+        symbol_table = self._get_symbol_table()
+        field_tail = store.compute_field_tail(field_path)
+        targets = set()
+        
+        # === Tier 1: Type-aware exact match ===
+        struct_type = None
+        if caller_func:
+            struct_type = symbol_table.get_func_var_type(caller_func, base_var)
+        if not struct_type:
+            struct_type = symbol_table.get_var_type(base_var)
+        if struct_type:
+            targets = store.resolve_struct_field(f'gstruct:{struct_type}.{field_tail}')
+            if targets:
+                return targets, 'high', f'type-aware: {struct_type}.{field_tail}'
+        
+        # === Tier 2: Exact path match ===
+        targets = store.resolve_struct_field(f'gstruct:{base_var}.{field_tail}')
         if targets:
-            return targets, 'high', f'type-aware: {struct_type}.{field_tail}'
-    
-    # === Tier 2: Exact path match ===
-    targets = store.resolve_struct_field(f'gstruct:{base_var}.{field_tail}')
-    if targets:
-        return targets, 'high', f'exact path: {base_var}.{field_tail}'
-    
-    # === Tier 3: Same-file scoped suffix ===
-    suffix = f'.{field_tail}'
-    for key, vals in store.struct_fields.items():
-        if not key.endswith(suffix):
-            continue
-        if filepath not in store.struct_field_files.get(key, set()):
-            continue
-        targets.update(vals)
-    if targets:
-        return targets, 'medium', f'same-file suffix: {suffix}'
-    
-    # === Tier 4: Cross-file suffix (last resort) ===
-    for key, vals in store.struct_fields.items():
-        if key.endswith(suffix):
+            return targets, 'high', f'exact path: {base_var}.{field_tail}'
+        
+        # === Tier 3: Same-file scoped suffix ===
+        suffix = f'.{field_tail}'
+        for key, vals in store.struct_fields.items():
+            if not key.endswith(suffix):
+                continue
+            if filepath not in store.struct_field_files.get(key, set()):
+                continue
             targets.update(vals)
-    if targets:
-        return targets, 'low', f'cross-file suffix: {suffix}'
+        if targets:
+            return targets, 'medium', f'same-file suffix: {suffix}'
+        
+        # === Tier 4: Cross-file suffix (last resort) ===
+        for key, vals in store.struct_fields.items():
+            if key.endswith(suffix):
+                targets.update(vals)
+        if targets:
+            return targets, 'low', f'cross-file suffix: {suffix}'
+        
+        return set(), 'none', ''
     
-    return set(), 'none', ''
+    def _get_store(self):
+        """Return the ScopedStore (first strategy's store)."""
+        return self._strategies[0]._store
+    
+    def _get_symbol_table(self):
+        """Return the SymbolTable (first strategy's symbol_table)."""
+        return self._strategies[0]._symbol_table
+```
 ```
 
 - [ ] **Step 3: Run unit tests**
@@ -556,6 +589,7 @@ In `field_call.analyze()._visit()`, replace the entire resolution block (from `t
 ```python
                 if field_path:
                     caller = find_enclosing_function(node, tree.root_node)
+                    base_var = field_path.split('.')[0]
                     # Tiered resolution
                     if resolver is not None:
                         targets, confidence, evidence = resolver.resolve_field_call(
@@ -695,27 +729,36 @@ git commit -m "refactor: delete 15-layer fallback stack, use tiered resolver exc
 
 ```python
 # dataflow.py — in DataflowEngine.resolve_call_site_param
-# Replace self.state.resolve(arg_name) with store lookup:
-        arg_targets = self.store.resolve_func_var('<callee>', arg_name)
-        if not arg_targets:
-            arg_targets = self.store.resolve_func_var('<global>', arg_name)
-        # Also check if arg_name is a known function
-        if symbol_names and arg_name in symbol_names:
-            arg_targets = set(arg_targets)
-            arg_targets.add(arg_name)
-        # ... write via store ...
-```
 
-Note: `resolve_call_site_param` is called from `_propagate_call_site` which has `call_name` (the callee). This needs to be threaded through. Add a `callee_name` parameter with default `'<global>'`.
-
-Update the signature and call site:
-```python
+# Update signature to accept callee_name:
 def resolve_call_site_param(self, func_name, param_idx, arg_name,
                              symbol_names=None, callee_name='<global>'):
-    ...
+    """..."""
+    key = (func_name, param_idx)
+    if key not in self.param_fields:
+        return set()
+    # Step 1: resolve arg_name against ScopedStore
     arg_targets = self.store.resolve_func_var(callee_name, arg_name)
     if not arg_targets:
         arg_targets = self.store.resolve_func_var('<global>', arg_name)
+    if symbol_names and arg_name in symbol_names:
+        arg_targets = set(arg_targets)
+        arg_targets.add(arg_name)
+    if not arg_targets:
+        return set()
+    # Step 2: propagate to struct fields via store
+    for target in arg_targets:
+        for field_key in self.param_fields[key]:
+            if field_key.startswith('<gstruct:') and field_key.endswith('>'):
+                self.store.assign_struct_field(field_key[9:-1], target)
+    return arg_targets
+```
+
+Update call site in `param_binding._propagate_call_site` (line ~16-23):
+```python
+def _propagate_call_site(call_name, arg_idx, target, dataflow, symbol_names):
+    dataflow.resolve_call_site_param(
+        call_name, arg_idx, target, symbol_names=symbol_names, callee_name=call_name)
 ```
 
 - [ ] **Step 2: Migrate `resolve_returned_field` to store-only**
@@ -833,40 +876,12 @@ def test_et_bench_high_confidence_fpr():
     assert fpr < 0.05, f"High-confidence FPR={fpr:.2%} exceeds 5% ceiling"
 ```
 
-- [ ] **Step 4: Add tiered FPR breakdown test**
-
-```python
-def test_et_bench_tiered_fpr():
-    """Tier 1-2 (high confidence) should have FPR < 5%."""
-    categories = _get_categories()
-    total_extra = 0
-    total_detected = 0
-    for category in categories:
-        for example in _get_examples(category):
-            example_dir = os.path.join(ET_BENCH_DIR, category, example)
-            example_edges = _load_example_ground_truth(example_dir)
-            if not example_edges:
-                continue
-            graph = _run_analysis_on_fixture(example_dir)
-            high_edges = [e for e in graph.edges
-                         if e.type.value == 'indirect'
-                         and getattr(e, 'confidence', 'medium') == 'high']
-            found_pairs = {(e.caller, e.callee) for e in high_edges}
-            expected_pairs = {(e['caller'], e['callee']) for e in example_edges}
-            extra = found_pairs - expected_pairs
-            total_extra += len(extra)
-            total_detected += len(found_pairs)
-    fpr = total_extra / total_detected if total_detected > 0 else 0.0
-    print(f'\nHigh-confidence FPR: {fpr:.2%} ({total_extra}/{total_detected})')
-    assert fpr < 0.05, f"High-confidence FPR={fpr:.2%} exceeds 5%"
-```
-
-- [ ] **Step 5: Run full suite**
+- [ ] **Step 4: Run full suite**
 
 Run: `.venv/bin/python -m pytest tests/ -q`
 Expected: All tests pass; overall FPR < 20%; high-confidence FPR < 5%
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add tests/test_et_bench.py
