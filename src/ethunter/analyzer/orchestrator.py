@@ -1,26 +1,39 @@
-"""Orchestrator: runs all analyzer modules and merges results into a single CallGraph."""
+"""Orchestrator: runs all analyzer modules and merges results into a single CallGraph.
+
+Hybrid pipeline (migration-in-progress):
+  Phase 1a: Cross-file pre-scan (param_helpers.prepare) — metadata
+  Phase 1:  Target Resolution — write dataflow (param_assign + direct_assign + initializer_assign + cast_assign)
+  Phase 1b: param_assign callback detection — callback_reg edges
+  Phase 2:  Call Detection — direct_call_fp + field_call + array_call + param_dispatch
+  Phase 3:  callback_reg with covered_callees — suppress redundant callback_reg edges
+"""
 
 from __future__ import annotations
 
 import tree_sitter as ts
 
 from ethunter.graph.model import CallGraph, CallType, CallEdge
-from ethunter.analyzer.dataflow import VariableState
+from ethunter.analyzer.dataflow import VariableState, DataflowEngine
 from ethunter.analyzer.symbol_table import SymbolTable
 from ethunter.analyzer import (
     direct_call,
     dlsym_fp,
 )
 from ethunter.analyzer import (
+    param_assign,
     direct_assign,
     initializer_assign,
     cast_assign,
-    param_assign,
 )
 from ethunter.analyzer import (
     direct_call_fp,
     field_call,
     array_call,
+)
+from ethunter.analyzer import (
+    param_helpers,
+    param_dispatch,
+    callback_reg,
 )
 
 TARGET_RESOLVERS = [
@@ -43,15 +56,11 @@ def run_all_analyses(
     dataflow: VariableState,
 ) -> CallGraph:
     """Run all analyzer modules on the parsed trees and build the CallGraph."""
-    from ethunter.analyzer.dataflow import DataflowEngine
-
     graph = CallGraph()
     symbol_names = symbol_table.all_function_names
 
-    # Wrap dataflow in DataflowEngine for cross-function tracking
     engine = DataflowEngine(state=dataflow)
 
-    # Add all functions to the graph
     for func_name in symbol_names:
         for f in symbol_table.lookup(func_name):
             graph.add_function(f)
@@ -62,13 +71,15 @@ def run_all_analyses(
         for edge in edges:
             graph.add_edge(edge)
 
-    # Phase 1a: Pre-scan all files for param->field registrations.
-    # This ensures engine.param_fields is fully populated BEFORE any file's
-    # Phase 1 call-site propagation tries to use it (fixes cross-file timing).
+    # Phase 1a: Cross-file pre-scan for metadata
+    for filepath, tree in trees.items():
+        param_helpers.prepare(tree, filepath, engine)
+
+    # Phase 1a (cont'd): param_assign pre-scan for cross-file state
     for filepath, tree in trees.items():
         param_assign._register_phase(tree, filepath, symbol_table, engine)
 
-    # Phase 1: Target resolution (writes to dataflow via engine)
+    # Phase 1: Target Resolution (writes to dataflow via engine)
     for filepath, tree in trees.items():
         for resolver in TARGET_RESOLVERS:
             resolver.analyze(
@@ -89,7 +100,7 @@ def run_all_analyses(
         for edge in edges:
             graph.add_edge(edge)
 
-    # Phase 2: Call detection (reads from dataflow via engine)
+    # Phase 2: Call Detection (reads from dataflow via engine)
     for filepath, tree in trees.items():
         for detector in CALL_DETECTORS:
             edges = detector.analyze(
@@ -100,6 +111,23 @@ def run_all_analyses(
             )
             for edge in edges:
                 graph.add_edge(edge)
+
+    # param_dispatch: additional callback_param edges
+    for filepath, tree in trees.items():
+        edges = param_dispatch.analyze(tree, filepath, engine)
+        for edge in edges:
+            graph.add_edge(edge)
+
+    # Build covered_callees from field_call edges
+    covered_callees = {e.callee for e in graph.edges
+                       if e.type == CallType.INDIRECT and e.indirect_kind == 'field_call'}
+    engine.covered_callees = covered_callees
+
+    # Phase 3: callback_reg with covered_callees + param_usage checks
+    for filepath, tree in trees.items():
+        edges = callback_reg.analyze(tree, filepath, engine)
+        for edge in edges:
+            graph.add_edge(edge)
 
     # dlsym_fp (independent)
     for filepath, tree in trees.items():
@@ -112,8 +140,7 @@ def run_all_analyses(
         for edge in edges:
             graph.add_edge(edge)
 
-    # Fix B+A-1: suppress callback edges where callee is covered by field_call
-    # (field_call provides a more precise caller name via struct dispatch).
+    # Fix B: suppress callback edges where callee is covered by field_call
     field_callees = {e.callee for e in graph.edges
                      if e.type == CallType.INDIRECT and e.indirect_kind == 'field_call'}
     if field_callees:
