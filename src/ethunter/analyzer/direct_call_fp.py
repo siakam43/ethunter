@@ -38,7 +38,10 @@ def analyze(
         """
         targets = set()
         if caller_func:
-            targets = dataflow.resolve(f'<var>:{caller_func}:{var_name}')
+            if hasattr(dataflow, 'store'):
+                targets = dataflow.store.resolve_func_var(caller_func, var_name)
+            if not targets:
+                targets = dataflow.resolve(f'<var>:{caller_func}:{var_name}')
         if not targets:
             targets = dataflow.resolve(var_name)
         if not targets:

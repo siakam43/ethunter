@@ -27,7 +27,9 @@ def analyze(
     # Read per-call-site targets from engine (populated by param_binding Phase 1)
     call_site_targets = dataflow.call_site_targets
 
-    # Reconstruct param_mappings from dataflow keys (for non-registration call sites)
+    # Reconstruct param_mappings from old dataflow keys only in Phase A.
+    # func_vars would aggregate direct_assign local vars — deferred to Phase C
+    # where param_dispatch uses call_site_targets exclusively.
     param_mappings: dict[str, set[str]] = {}
     for key, vals in dataflow.targets.items():
         if ':' in key and not key.startswith('<'):

@@ -112,13 +112,21 @@ def analyze(
                     base_var = field_path.split('.')[0]
                     struct_type = symbol_table.get_var_type(base_var)
                     if struct_type:
-                        targets = dataflow.resolve(f'<gstruct>:{struct_type}.{field_path}>')
+                        # Phase A: try ScopedStore first
+                        if hasattr(dataflow, 'store'):
+                            targets = dataflow.store.resolve_struct_field(
+                                f'gstruct:{struct_type}.{field_path}')
+                        if not targets:
+                            targets = dataflow.resolve(f'<gstruct>:{struct_type}.{field_path}>')
                         if targets:
                             # Found via type-aware exact match — skip fallback layers
                             pass
                     if not targets:
                         # Try <gstruct:path> first (from initializer_assign or this module)
-                        targets = dataflow.resolve(f'<gstruct:{field_path}>')
+                        if hasattr(dataflow, 'store'):
+                            targets = dataflow.store.resolve_struct_field(f'gstruct:{field_path}')
+                        if not targets:
+                            targets = dataflow.resolve(f'<gstruct:{field_path}>')
                     # Try <struct:path> (from param_assign)
                     if not targets:
                         targets = dataflow.resolve(f'<struct:{field_path}>')
