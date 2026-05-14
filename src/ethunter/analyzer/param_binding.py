@@ -241,7 +241,7 @@ def _resolve_fields(tree: ts.Tree, filepath: str, symbol_table, dataflow) -> Non
             for t in targets:
                 dataflow.assign(f'<struct:{field_path}>', t)
                 if hasattr(dataflow, 'store'):
-                    dataflow.store.assign_struct_field(f'gstruct:{base_var}.{field_tail}', t)
+                    dataflow.store.assign_struct_field(f'gstruct:{base_var}.{field_tail}', t, filepath)
             df_targets = dataflow.resolve(f'{fa.enclosing_func}:{param_name}')
             if not df_targets:
                 df_targets = dataflow.resolve(param_name)
@@ -251,7 +251,7 @@ def _resolve_fields(tree: ts.Tree, filepath: str, symbol_table, dataflow) -> Non
                 dataflow.assign(f'<struct:{field_path}>', t)
                 dataflow.assign(f'<struct:{field_name}>', t)
                 if hasattr(dataflow, 'store'):
-                    dataflow.store.assign_struct_field(f'gstruct:{base_var}.{field_tail}', t)
+                    dataflow.store.assign_struct_field(f'gstruct:{base_var}.{field_tail}', t, filepath)
             if fa.enclosing_func in func_params:
                 params = func_params[fa.enclosing_func]
                 if param_name in params:

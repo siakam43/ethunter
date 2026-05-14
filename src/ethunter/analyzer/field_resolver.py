@@ -200,8 +200,10 @@ class FieldResolver:
         for key, vals in self._store.struct_fields.items():
             if not key.endswith(suffix):
                 continue
-            if filepath not in self._store.struct_field_files.get(key, set()):
-                continue
+            files = self._store.struct_field_files.get(key)
+            if files and filepath not in files:
+                continue  # tracked, different file → skip
+            # Untracked entries pass through (backward compat with legacy writes)
             targets.update(vals)
         if targets:
             return targets, 'medium', f'same-file suffix: {suffix}'
