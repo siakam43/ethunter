@@ -2050,3 +2050,31 @@ def test_return_field_resolution_after_initializer_assign():
     pairs = {(e.caller, e.callee) for e in edges if e.type == CallType.INDIRECT}
     assert ("debug_cb", "ssl_default") in pairs, \
         f"Expected debug_cb -> ssl_default via return field chain, got: {pairs}"
+
+
+def test_collect_local_var_types_records_struct_types():
+    """Local struct variable declarations should record types for Tier 1 resolution."""
+    import tree_sitter_c as tsc
+    from tree_sitter import Language, Parser
+    source = b'''
+    struct my_type { void (*cb)(void); };
+    static void handler_a(void) {}
+    void do_work(void) {
+        struct my_type *ctx;
+        ctx->cb = handler_a;
+        ctx->cb();
+    }
+    '''
+    lang = Language(tsc.language())
+    parser = Parser(lang)
+    tree = parser.parse(source)
+    from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
+    from ethunter.analyzer.dataflow import VariableState, DataflowEngine
+    from ethunter.analyzer import field_call
+    st = SymbolTable()
+    for func in extract_functions(tree, "test.c"):
+        st.add_function(func)
+    engine = DataflowEngine(state=VariableState())
+    field_call.collect(tree, "test.c", engine, st, st.all_function_names)
+    t = st.get_func_var_type("do_work", "ctx")
+    assert t == "my_type", f"Expected my_type, got {t}"

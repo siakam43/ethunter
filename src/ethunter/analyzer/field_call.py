@@ -77,6 +77,55 @@ def collect(tree: ts.Tree, filepath: str, dataflow, symbol_table,
                 if struct_type:
                     dataflow.store.assign_struct_field(f'gstruct:{struct_type}.{field_tail}',
                                                        fa.resolved_value)
+    _collect_local_var_types(tree, symbol_table)
+
+
+def _collect_local_var_types(tree, symbol_table):
+    """Scan function bodies for local struct pointer declarations.
+
+    struct my_type *ptr;  →  (func, "ptr") → "my_type"
+    my_type *ptr;         →  (func, "ptr") → "my_type" (via typedef)
+    """
+    def _extract_func_name(node):
+        decl = None
+        for c in node.children:
+            if c.type == 'function_declarator':
+                decl = c; break
+            if c.type in ('pointer_declarator', 'parenthesized_declarator'):
+                for cc in c.children:
+                    if cc.type == 'function_declarator':
+                        decl = cc; break
+        if decl:
+            for c in decl.children:
+                if c.type == 'identifier' and c.text:
+                    return c.text.decode('utf-8')
+        return None
+
+    def _scan(node, current_func):
+        if node.type == 'function_definition':
+            fname = _extract_func_name(node)
+            if fname:
+                current_func = fname
+        if node.type == 'declaration' and current_func:
+            type_name = None
+            var_name = None
+            for c in node.children:
+                if c.type == 'type_identifier' and c.text:
+                    type_name = c.text.decode('utf-8')
+                elif c.type == 'struct_specifier':
+                    for sc in c.children:
+                        if sc.type == 'type_identifier' and sc.text:
+                            type_name = sc.text.decode('utf-8'); break
+                elif c.type == 'pointer_declarator':
+                    for pc in c.children:
+                        if pc.type == 'identifier' and pc.text:
+                            var_name = pc.text.decode('utf-8'); break
+            if type_name and var_name:
+                symbol_table.record_func_var_type(current_func, var_name, type_name)
+        for child in node.children:
+            _scan(child, current_func)
+
+    _scan(tree.root_node, None)
 
 
 def analyze(
