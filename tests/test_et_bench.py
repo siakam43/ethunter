@@ -1765,3 +1765,58 @@ def test_param_dispatch_pass_b_skips_when_pass_a_covers():
     assert ("inner", "h2") in pairs, f"Pass A should emit inner->h2: {pairs}"
     assert ("outer_a", "h1") not in pairs, f"Pass B should skip outer_a->h1: {pairs}"
     assert ("outer_b", "h2") not in pairs, f"Pass B should skip outer_b->h2: {pairs}"
+
+
+def test_callback_reg_suppresses_forwarder():
+    """Forwarder should NOT emit callback_reg for forwarded fnptr."""
+    import tree_sitter_c as tsc
+    from tree_sitter import Language, Parser
+    source = b'''
+    typedef void (*cb_t)(int);
+    static void my_cb(int x) { (void)x; }
+    static void direct_caller(cb_t cb) { cb(42); }
+    static void forwarder(cb_t cb) { direct_caller(cb); }
+    void setup(void) { forwarder(my_cb); }
+    '''
+    lang = Language(tsc.language())
+    parser = Parser(lang)
+    tree = parser.parse(source)
+    from ethunter.analyzer.dataflow import DataflowEngine
+    from ethunter.analyzer.param_helpers import prepare
+    from ethunter.analyzer.param_binding import analyze as param_binding_analyze
+    from ethunter.analyzer.callback_reg import analyze as callback_reg_analyze
+    engine = DataflowEngine()
+    prepare(tree, "test.c", engine)
+    param_binding_analyze(tree, "test.c", engine)
+    engine.covered_callees = set()
+    edges = callback_reg_analyze(tree, "test.c", engine)
+    cr_targets = {e.callee for e in edges}
+    assert "my_cb" not in cr_targets, f"forwarder should not emit callback_reg, got: {cr_targets}"
+
+
+def test_callback_reg_suppress_when_covered_by_field_call():
+    """callback_reg suppressed when callee is in covered_callees (Stage 2)."""
+    import tree_sitter_c as tsc
+    from tree_sitter import Language, Parser
+    source = b'''
+    typedef void (*fn_t)(void);
+    static void my_fn(void) {}
+    struct s { fn_t handler; };
+    static void reg(struct s *o, fn_t f) { o->handler = f; }
+    static void dispatch(struct s *o) { if (o->handler) o->handler(); }
+    void setup(void) { struct s o; reg(&o, my_fn); dispatch(&o); }
+    '''
+    lang = Language(tsc.language())
+    parser = Parser(lang)
+    tree = parser.parse(source)
+    from ethunter.analyzer.dataflow import DataflowEngine
+    from ethunter.analyzer.param_helpers import prepare
+    from ethunter.analyzer.param_binding import analyze as param_binding_analyze
+    from ethunter.analyzer.callback_reg import analyze as callback_reg_analyze
+    engine = DataflowEngine()
+    prepare(tree, "test.c", engine)
+    param_binding_analyze(tree, "test.c", engine)
+    engine.covered_callees = {"my_fn"}
+    edges = callback_reg_analyze(tree, "test.c", engine)
+    cr_targets = {e.callee for e in edges}
+    assert "my_fn" not in cr_targets, f"my_fn in covered_callees, should be suppressed: {cr_targets}"
