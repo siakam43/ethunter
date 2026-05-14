@@ -19,7 +19,8 @@
 ```
 Phase 1a: CROSS-FILE PRE-SCAN
   所有文件预扫描 → 写入跨文件共享状态
-  └─ param_binding._register_phase() → param_fields, ret_fields, param_usage
+  └─ param_helpers.prepare() → func_params, func_fp_params,
+                                param_fields, ret_fields, param_usage
 
 Phase 1: TARGET RESOLUTION (只写 dataflow，不产任何边)
   ├─ direct_assign       → 局部变量赋值
@@ -60,8 +61,8 @@ Independent:
 
 | 新文件 | 行数 | Phase | 职责 |
 |--------|------|-------|------|
-| `param_helpers.py` | ~120 | 1a | 共享工具: func_params 收集、fnptr typedefs、宏提取、param_usage 分类 |
-| `param_binding.py` | ~200 | 1 | 参数绑定: 调点参数映射 + struct field 赋值 → 写 dataflow + registration_sites |
+| `param_helpers.py` | ~200 | 1a | `prepare()`: 集中收集 func_params/func_fp_params/macros/param_usage + param_field/ret_field 注册。只写 engine，不产边 |
+| `param_binding.py` | ~180 | 1 | 参数绑定: 读 engine 中元数据，处理调点参数映射 + struct 赋值 → 写 dataflow + registration_sites |
 | `param_dispatch.py` | ~160 | 2 | Fnptr 调用检测: Pass A (函数体内 cb()) + Pass B (调点 caller) + Pass A/B 去重 |
 
 ### param_dispatch Pass A/B 去重规则
@@ -82,11 +83,13 @@ class DataflowEngine:
     param_fields: dict[tuple[str, int], set[str]]
     ret_fields: dict[str, set[str]]
     aliases: dict[str, str]
+    param_alias_map: dict[tuple[str, str], str]  # (func, local_var) → global_name (从 state 迁移)
     unwrap_cast: Callable  # CastResolver
 
     # === 已有 (从 state 迁移到 engine) ===
     func_fp_params: dict[str, set[int]]
     param_usage: dict[tuple[str, int], str]
+    func_params: dict[str, list[str]]   # 新增: 跨文件 param 名查找
 
     # === 新增 ===
     registration_sites: list[dict]  # [{caller, callee, arg_idx, target, file, line}]
@@ -100,6 +103,52 @@ class DataflowEngine:
 ```
 
 **不再使用 `hasattr(dataflow, 'xxx')` 的条件分支**: 所有 analyzer 统一接收 DataflowEngine。
+
+### func_fp_params 跨模块访问变更
+
+当前 `func_fp_params` 分别存储在 `dataflow.state.func_fp_params` 或 `dataflow.func_fp_params`（取决于调用路径），读取处需要 `hasattr` 回退链：
+
+| 模块 | 当前访问方式 | 迁移后 |
+|------|-------------|--------|
+| `param_assign.py` (→ 4新文件) | `getattr(dataflow, 'func_fp_params', None)` + `getattr(dataflow.state, ...)` | `dataflow.func_fp_params` |
+| `field_call.py:212-214` | `getattr(dataflow, 'func_fp_params', None)` + `getattr(dataflow.state, ...)` | `dataflow.func_fp_params` |
+
+`field_call.py` 是 param 模块之外唯一读写 `func_fp_params` 的地方（用于 callback-of-callback 检测）。迁移后统一路径为 `dataflow.func_fp_params`，`hasattr` 回退链删除。
+
+### Phase 1a → Phase 1 契约
+
+**`param_helpers.prepare()` 写入 engine 的字段:**
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `engine.func_params` | `dict[str, list[str]]` | 函数名 → 参数名列表（跨文件累积，新增） |
+| `engine.func_fp_params` | `dict[str, set[int]]` | 函数名 → fnptr 参数位置集合 |
+| `engine.param_usage` | `dict[tuple[str, int], str]` | (函数, 位置) → caller/forwarder/storage |
+| `engine.param_fields` | `dict[tuple[str, int], set[str]]` | (函数, 位置) → struct field 路径集合 |
+| `engine.ret_fields` | `dict[str, set[str]]` | 函数 → 返回的 struct field 路径集合 |
+| `engine.param_alias_map` | `dict[tuple[str,str], str]` | (函数, 局部变量) → 全局结构体名（从 state 迁移） |
+
+`func_params` 是新增强制写入——当前代码在 `_register_phase` 中不在跨文件存储 `func_params`，导致跨文件调点参数映射失败时退化到跳过。重构后在 `prepare()` 中通过 `engine.func_params.update()` 跨文件累积。
+
+**`param_binding.analyze()` 从 engine 读取:**
+
+- `engine.func_params`：跨文件参数名查找（替代当前每文件局部收集）
+- `engine.func_fp_params`：判断调点位置是否为 fnptr 参数
+- `engine.param_usage`：Phase 3 使用（暂不在此阶段读取）
+- Macros：由 `analyze()` 内部调用 `param_helpers._collect_simple_macros(tree)` 每文件收集（宏是文件作用域，不能跨文件共享）
+
+**`_propagate_call_site` type 信息传递:**
+
+`resolve_call_site_param(func_name, arg_idx, arg_name)` 当前写入 `<gstruct:{field_path}>` key。type-aware 改造后：
+
+1. `param_fields[(func_name, arg_idx)]` 存储了 field_path + struct_param_idx
+2. 在调点处，struct_param_idx 位置的实参名可从 AST 获取
+3. `symbol_table.get_var_type(struct_arg_name)` 查询 struct 变量的类型
+4. 若类型已知，写 `<gstruct>:<type>.<struct_arg>.<field_path>`；若未知，降级写 `<gstruct>:<struct_arg>.<field_path>`（保留变量名区分）
+
+**已知限制:**
+- **跨文件参数名缺失:** 若 head file 中的函数声明只给出参数类型无参数名，`func_params` 的参数名位置信息不可用。降级行为：按 `func_fp_params` 进行位置匹配（仅验证 arg_idx in fp_positions），不产出命名 mapped key。
+- **`var_to_type` 同名覆盖:** `record_var_type("name", "type")` 使用全局 key，不同文件中同名不同类型的变量后者覆盖前者。对于 `struct ssl_ctx_st *ctx` 和 `struct net_ctx_st *ctx` 并存的场景，类型查询结果取决于文件处理顺序。这是全局符号表的固有限制，不在本次重构范围内解决。
 
 ## SymbolTable 类型追踪扩展
 
@@ -119,7 +168,7 @@ class SymbolTable:
 - `direct_assign`: 扫描 `struct type *ptr = ...` → `record_var_type("ptr", "type")`
 - 各模块扫描 `struct_specifier` AST 节点 → `record_struct_fields("type", [fields])`
 
-## field_call 查找策略: 12层 → 4层
+## field_call 查找策略: 12层 → 5层
 
 ```
 Layer 1: 精确 key 查找
@@ -135,9 +184,15 @@ Layer 3: <garray>:<base_var>
 
 Layer 4: 指针别名解析
   → pointer_resolutions[base_var] → 重新 Layer 1
+
+Layer D (Degradation): 当 type 未知时的安全网
+  仅扫描 <gstruct>:* 前缀 keys（不含 <struct>:<garray>:<chain>: 等）
+  → key.startswith("<gstruct>:") and key.endswith(".<fieldname>")
+  → 限定在 struct field 域内，避免裸变量名/<struct>/<garray> 碰撞
+  → 仅当 Layer 1-4 全部失败时触发
 ```
 
-**移除**: 全局 `key.endswith('.fieldname>')` wildcard scan (line 178-181) — 最大的单一 FP 来源
+**移除**: 全局无限制 `key.endswith('.fieldname>')` wildcard scan — 替换为 Layer D 的 `<gstruct>:` 前缀限定扫描
 
 ## callback_reg 三阶段判定
 
@@ -164,20 +219,20 @@ src/ethunter/analyzer/
 ├─ symbol_table.py          141→170  新增 record_var_type/get_var_type/get_struct_fields
 ├─ helpers.py               293→293  不变
 │
-├─ param_helpers.py         NEW~120  共享工具 (从 param_assign 提取)
+├─ param_helpers.py         NEW~200  共享工具 + prepare() 入口
 ├─ param_binding.py         NEW~200  Phase 1: 参数绑定
 ├─ param_dispatch.py        NEW~160  Phase 2: fnptr 调用
 ├─ callback_reg.py          NEW~130  Phase 3: 注册检测
 │
 ├─ direct_call.py            86→86   不变
 ├─ dlsym_fp.py               58→58   不变
-├─ direct_assign.py         121→121  不变
+├─ direct_assign.py         121→130  写 <var>:<enclosing_func>:<var_name> 替代裸变量名
 ├─ initializer_assign.py    420→450  写 type-aware key
-├─ cast_assign.py            62→62   不变
-├─ direct_call_fp.py         84→84   不变
+├─ cast_assign.py            62→70   写 <var>:<enclosing_func>:<var_name> 替代裸变量名
+├─ direct_call_fp.py         84→90   读 <var>:<enclosing_func>:<var_name> 替代裸变量名
 ├─ field_call.py            282→200  4 层类型感知查找
 ├─ array_call.py             58→58   不变
-├─ local_fp_tracker.py       91→91   不变
+├─ local_fp_tracker.py       91→100  查询时使用 type-aware key + 接收 symbol_table 参数
 │
 └─ (删除) param_assign.py   786→✗
    总行数: ~2840 → ~2770
@@ -191,10 +246,12 @@ src/ethunter/analyzer/
 | 2 | 创建 param_binding.py (只写不产边) | 单独 |
 | 3 | 创建 param_dispatch.py (Pass 3+4) | 单独 |
 | 4 | 创建 callback_reg.py (Phase 3) | 单独 |
-| 5 | 改造 field_call.py (type-aware) | ET-Bench FP 下降确认 |
-| 6 | 改造 initializer_assign.py + symbol_table.py (type-aware key) | ET-Bench 召回不变确认 |
+| 5 | 改造 initializer_assign.py + symbol_table.py (type-aware key 写入) | ET-Bench 召回不变确认 |
+| 6 | 改造 field_call.py (type-aware 查找 + 新旧格式双读) | ET-Bench FP 下降确认 |
 | 7 | 重组 orchestrator.py (3-Phase + 移除 Fix B) | 全量 |
-| 8 | 删除 param_assign.py | 全量 |
+| 8 | 删除 param_assign.py + 移除双读兼容代码 | 全量 |
+
+**Step 5-6 合并说明**: old key 格式 `<gstruct:var.field>` 与 new key 格式 `<gstruct>:<type>.<var>.<field>` 不兼容。Step 6（field_call）实现时需同时读取新旧两种格式——优先查新格式，miss 时回退查旧格式。Step 8 删除 param_assign 后旧格式不再写入，双读代码随之删除。
 
 ## 预期结果
 
