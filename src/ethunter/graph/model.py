@@ -37,6 +37,8 @@ class CallEdge:
     type: CallType = CallType.DIRECT
     indirect_kind: str = ""
     caller_line: int = 0
+    confidence: str = 'medium'   # 'high' | 'medium' | 'low'
+    evidence: str = ''           # human-readable evidence description
 
     def to_dict(self) -> dict:
         d = {
@@ -50,6 +52,10 @@ class CallEdge:
             d["indirect_kind"] = self.indirect_kind
         if self.caller_line:
             d["caller_line"] = self.caller_line
+        if self.confidence != 'medium':
+            d["confidence"] = self.confidence
+        if self.evidence:
+            d["evidence"] = self.evidence
         return d
 
 
@@ -105,6 +111,8 @@ class CallGraph:
                 type=edge_type,
                 indirect_kind=ed.get("indirect_kind", ""),
                 caller_line=ed.get("caller_line", 0),
+                confidence=ed.get("confidence", "medium"),
+                evidence=ed.get("evidence", ""),
             )
             graph.add_edge(edge)
         graph.source_files = d.get("source_files", [])
