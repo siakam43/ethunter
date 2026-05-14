@@ -1709,3 +1709,59 @@ def test_param_binding_writes_dataflow_no_edges():
     assert site["caller"] == "setup", f"unexpected caller: {site}"
     assert site["callee"] == "reg", f"unexpected callee: {site}"
     assert site["target"] == "my_handler", f"unexpected target: {site}"
+
+
+def test_param_dispatch_produces_callback_param_edges():
+    """param_dispatch detects fnptr param calls and emits callback_param edges."""
+    import tree_sitter_c as tsc
+    from tree_sitter import Language, Parser
+    source = b'''
+    typedef void (*fn_t)(void);
+    static void my_handler(void) {}
+    static void dispatcher(fn_t cb) { cb(); }
+    void setup(void) { dispatcher(my_handler); }
+    '''
+    lang = Language(tsc.language())
+    parser = Parser(lang)
+    tree = parser.parse(source)
+    from ethunter.analyzer.dataflow import DataflowEngine
+    from ethunter.analyzer.param_helpers import prepare
+    from ethunter.analyzer.param_binding import analyze as param_binding_analyze
+    from ethunter.analyzer.param_dispatch import analyze as param_dispatch_analyze
+    engine = DataflowEngine()
+    prepare(tree, "test.c", engine)
+    param_binding_analyze(tree, "test.c", engine)
+    edges = param_dispatch_analyze(tree, "test.c", engine)
+    pairs = {(e.caller, e.callee) for e in edges}
+    assert ("dispatcher", "my_handler") in pairs, f"Expected dispatcher->my_handler in {pairs}"
+    assert all(e.indirect_kind == "callback_param" for e in edges)
+
+
+def test_param_dispatch_pass_b_skips_when_pass_a_covers():
+    """Pass B should NOT emit (outer, target) when Pass A already emits (inner, target)."""
+    import tree_sitter_c as tsc
+    from tree_sitter import Language, Parser
+    source = b'''
+    typedef void (*fn_t)(void);
+    static void h1(void) {}
+    static void h2(void) {}
+    static void inner(fn_t cb) { cb(); }
+    void outer_a(void) { inner(h1); }
+    void outer_b(void) { inner(h2); }
+    '''
+    lang = Language(tsc.language())
+    parser = Parser(lang)
+    tree = parser.parse(source)
+    from ethunter.analyzer.dataflow import DataflowEngine
+    from ethunter.analyzer.param_helpers import prepare
+    from ethunter.analyzer.param_binding import analyze as param_binding_analyze
+    from ethunter.analyzer.param_dispatch import analyze as param_dispatch_analyze
+    engine = DataflowEngine()
+    prepare(tree, "test.c", engine)
+    param_binding_analyze(tree, "test.c", engine)
+    edges = param_dispatch_analyze(tree, "test.c", engine)
+    pairs = {(e.caller, e.callee) for e in edges}
+    assert ("inner", "h1") in pairs, f"Pass A should emit inner->h1: {pairs}"
+    assert ("inner", "h2") in pairs, f"Pass A should emit inner->h2: {pairs}"
+    assert ("outer_a", "h1") not in pairs, f"Pass B should skip outer_a->h1: {pairs}"
+    assert ("outer_b", "h2") not in pairs, f"Pass B should skip outer_b->h2: {pairs}"
