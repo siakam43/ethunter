@@ -78,6 +78,7 @@ def collect(tree: ts.Tree, filepath: str, dataflow, symbol_table,
                     dataflow.store.assign_struct_field(f'gstruct:{struct_type}.{field_tail}',
                                                        fa.resolved_value)
     _collect_local_var_types(tree, symbol_table)
+    _collect_cast_types(tree, symbol_table)
 
 
 def _collect_local_var_types(tree, symbol_table):
@@ -122,6 +123,69 @@ def _collect_local_var_types(tree, symbol_table):
                             var_name = pc.text.decode('utf-8'); break
             if type_name and var_name:
                 symbol_table.record_func_var_type(current_func, var_name, type_name)
+        for child in node.children:
+            _scan(child, current_func)
+
+    _scan(tree.root_node, None)
+
+
+def _collect_cast_types(tree, symbol_table):
+    """Scan for cast expressions that reveal struct pointer types."""
+    def _extract_current_func(node):
+        if node.type == 'function_definition':
+            for c in node.children:
+                if c.type == 'function_declarator':
+                    for cc in c.children:
+                        if cc.type == 'identifier' and cc.text:
+                            return cc.text.decode('utf-8')
+                if c.type in ('pointer_declarator', 'parenthesized_declarator'):
+                    for cc in c.children:
+                        if cc.type == 'function_declarator':
+                            for ccc in cc.children:
+                                if ccc.type == 'identifier' and ccc.text:
+                                    return ccc.text.decode('utf-8')
+        return None
+
+    def _extract_cast_struct_type(cast_node):
+        """Extract struct type name from cast_expression's type_descriptor.
+
+        Parses 'struct ctx*' → 'ctx', 'my_type*' → 'my_type'.
+        """
+        for c in cast_node.children:
+            if c.type == 'type_descriptor':
+                text = c.text.decode('utf-8') if c.text else ''
+                # Strip '*', 'const', whitespace to get base type
+                import re
+                m = re.search(r'struct\s+(\w+)', text)
+                if m:
+                    return m.group(1)
+                m = re.search(r'(\w+)\s*\*', text)
+                if m and m.group(1) not in ('const', 'volatile'):
+                    return m.group(1)
+            if c.type == 'struct_specifier':
+                for sc in c.children:
+                    if sc.type == 'type_identifier' and sc.text:
+                        return sc.text.decode('utf-8')
+        return None
+
+    def _scan(node, current_func):
+        if node.type == 'function_definition':
+            fname = _extract_current_func(node)
+            if fname:
+                current_func = fname
+        if node.type == 'field_expression' and current_func:
+            base = node.children[0] if node.children else None
+            if base and base.type == 'parenthesized_expression':
+                inner = base.children[1] if len(base.children) > 1 else None
+                if inner and inner.type == 'cast_expression':
+                    type_name = _extract_cast_struct_type(inner)
+                    # identifier is a direct child of cast_expression (index 3)
+                    for cc in inner.children:
+                        if cc.type == 'identifier' and cc.text:
+                            var_name = cc.text.decode('utf-8')
+                            if type_name and var_name:
+                                symbol_table.record_func_var_type(current_func, var_name, type_name)
+                            break
         for child in node.children:
             _scan(child, current_func)
 

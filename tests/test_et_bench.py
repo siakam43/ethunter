@@ -2078,3 +2078,30 @@ def test_collect_local_var_types_records_struct_types():
     field_call.collect(tree, "test.c", engine, st, st.all_function_names)
     t = st.get_func_var_type("do_work", "ctx")
     assert t == "my_type", f"Expected my_type, got {t}"
+
+
+def test_collect_cast_types_records_struct_types():
+    """Cast expressions like ((struct ctx*)ptr)->handler should record ptr's type."""
+    import tree_sitter_c as tsc
+    from tree_sitter import Language, Parser
+    source = b'''
+    struct ctx { void (*handler)(void); };
+    static void h(void) {}
+    void do_work(void *ptr) {
+        ((struct ctx*)ptr)->handler = h;
+        ((struct ctx*)ptr)->handler();
+    }
+    '''
+    lang = Language(tsc.language())
+    parser = Parser(lang)
+    tree = parser.parse(source)
+    from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
+    from ethunter.analyzer.dataflow import VariableState, DataflowEngine
+    from ethunter.analyzer import field_call
+    st = SymbolTable()
+    for func in extract_functions(tree, "test.c"):
+        st.add_function(func)
+    engine = DataflowEngine(state=VariableState())
+    field_call.collect(tree, "test.c", engine, st, st.all_function_names)
+    t = st.get_func_var_type("do_work", "ptr")
+    assert t == "ctx", f"Expected ctx, got {t}"
