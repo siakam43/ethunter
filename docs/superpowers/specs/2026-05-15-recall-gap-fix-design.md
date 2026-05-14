@@ -53,7 +53,7 @@ for key, vals in dataflow.targets.items():
 
 ### 修复
 
-`param_binding._collect_call_params` 的 fallback `else` 分支，补加 dataflow 写入（新增 4 行）：
+**Step 1**: `param_binding._collect_call_params` 的 fallback `else` 分支，补加 dataflow 写入（新增 4 行）：
 
 ```python
 # 当前代码 (param_binding.py ~line 96-108)
@@ -75,6 +75,8 @@ else:
             call_site_targets[cs_key] = set()
         call_site_targets[cs_key].update(df_targets)
 ```
+
+**FP 影响**: 新增的 `dataflow.assign(pname, t)`（bare key）与旧 `param_assign` 的 registration 分支行为一致（旧代码也写 bare key）。`f'{call_name}:{pname}'` 格式与 `param_dispatch` 的 key 重建逻辑一致。此改动不会引入新 FP 模式。
 
 ### 影响
 
@@ -108,48 +110,68 @@ Phase 1 execution:
 
 ```python
 def analyze(tree, filepath, symbol_table, dataflow) -> list:
-    """Pass 1 only: collect call-site params, write dataflow + registration_sites."""
-    # 原 Pass 1 的 _collect_call_params + func_params/macros 初始化
+    """Pass 1 only: collect call-site params, write dataflow + registration_sites.
+    param_mappings and call_site_targets stored on engine for _resolve_fields()."""
+    # 原 Pass 1 的 _collect_call_params
+    # 末尾: dataflow.call_site_targets.update(call_site_targets)
     # returns [] (no edges)
 
 def _resolve_fields(tree, filepath, symbol_table, dataflow) -> None:
-    """Pass 2: resolve struct member assignments (field=param + return value tracking).
-    Must run AFTER all other TARGET_RESOLVERS to have complete dataflow state."""
-    # 原 Pass 2 的 collect_field_assignments 处理 + resolve_returned_field
+    """Pass 2: resolve struct member assignments.
+    Must run AFTER all other TARGET_RESOLVERS.
+    Reconstructs param_mappings from dataflow keys (consistent with param_dispatch)."""
+    param_mappings = {}
+    for key, vals in dataflow.targets.items():
+        if ':' in key and not key.startswith('<'):
+            p = key.split(':')[-1]
+            if p not in param_mappings:
+                param_mappings[p] = set()
+            param_mappings[p].update(vals)
+    # ... then existing Pass 2 logic using param_mappings + dataflow.resolve() + resolve_returned_field
 ```
+
+**关键设计决策**: `_resolve_fields()` 不接收 `param_mappings` 参数，而是从 dataflow keys 重建（与 `param_dispatch` 一致）。这避免了函数签名中的状态传递耦合。
 
 **orchestrator.py**:
 
+关键变化：`param_binding` 和 `param_assign` 都从 `TARGET_RESOLVERS` 列表中移除。`param_binding` 通过 2 个显式调用执行（Pass 1 + Pass 2）。`param_assign` 仅在 Phase 1b 中调用（保留 hybrid 兼容性）。
+
 ```python
-# Phase 1a: param_helpers.prepare()
-for filepath, tree in trees.items():
-    param_helpers.prepare(tree, filepath, engine)
+# TARGET_RESOLVERS 从:
+#   [param_binding, param_assign, direct_assign, initializer_assign, cast_assign]
+# 改为:
+TARGET_RESOLVERS = [direct_assign, initializer_assign, cast_assign]
 
-# Phase 1a (cont'd): param_assign._register_phase()  [kept during hybrid state]
-for filepath, tree in trees.items():
-    param_assign._register_phase(tree, filepath, symbol_table, engine)
+# Phase 1a: ... (unchanged)
 
-# Phase 1: Pass 1 — param_binding call params (must be first)
+# Phase 1 Pass 1: param_binding call params (must be first, before direct_assign)
 for filepath, tree in trees.items():
     param_binding.analyze(tree, filepath, symbol_table, engine)
 
-# Phase 1: TARGET_RESOLVERS (write dataflow, no edges)
+# Phase 1 Pass 1b: TARGET_RESOLVERS (write dataflow, no edges)
 for filepath, tree in trees.items():
-    for resolver in [direct_assign, initializer_assign, cast_assign]:
-        resolver.analyze(tree=tree, filepath=filepath, symbol_table=symbol_table, dataflow=engine)
+    for resolver in TARGET_RESOLVERS:
+        resolver.analyze(tree=tree, filepath=filepath,
+                         symbol_table=symbol_table, dataflow=engine)
 
-# Phase 1: Pass 2 — param_binding field resolution (after all resolvers)
+# Phase 1 Pass 2: param_binding field resolution (after all resolvers)
 for filepath, tree in trees.items():
     param_binding._resolve_fields(tree, filepath, symbol_table, engine)
 
-# Phase 1b: param_assign callback detection  [kept during hybrid state]
+# Phase 1b: param_assign callback detection [kept during hybrid state]
 for filepath, tree in trees.items():
-    edges = param_assign.analyze(...)
-
-# Phase 2: ...
+    edges = param_assign.analyze(tree=tree, filepath=filepath,
+                                  symbol_table=symbol_table, dataflow=engine)
+    for edge in edges:
+        graph.add_edge(edge)
 ```
 
-**关键**: `param_assign.analyze()` 仍然调用完整的 Pass 1 + Pass 2（内部已包含 field resolution），但 `param_binding` 的 field resolution 也额外执行，两者不冲突（都写入相同的 dataflow keys）。
+**不冲突分析**:
+1. `param_binding.analyze()` Pass 1（写 dataflow） + `param_assign.analyze()` Phase 1b（也写 dataflow）→ 冗余但 safe（set add 去重）
+2. `_resolve_fields()` + `param_assign.analyze()` Phase 1b 双重调用 `resolve_returned_field` → 冗余但 safe
+3. `direct_assign` 仍可从 `param_binding.analyze()` 的 dataflow 获取参数映射（`param_binding` 先于 `direct_assign` 运行）— 无回归
+
+**analyze() 修改说明**: `param_binding.analyze()` 当前内部包含 Pass 1 (`_collect_call_params`) 和 Pass 2（field assignment 循环）。修改后 Pass 2 代码从 `analyze()` **移除**，迁移到 `_resolve_fields()`。`analyze()` 仅保留 Pass 1 + `call_site_targets` 存储。
 
 ### 影响
 
