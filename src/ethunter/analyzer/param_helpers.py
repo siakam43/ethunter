@@ -391,8 +391,7 @@ def _collect_param_types(root_node, symbol_table) -> None:
                         for tc in p.children:
                             if tc.type == 'type_identifier' and tc.text:
                                 type_name = tc.text.decode('utf-8')
-                                if symbol_table.resolve_typedef(type_name):
-                                    symbol_table.record_func_var_type(fname, pname, type_name)
+                                symbol_table.record_func_var_type(fname, pname, type_name)
                                 break
                             if tc.type == 'struct_specifier':
                                 for sc in tc.children:
