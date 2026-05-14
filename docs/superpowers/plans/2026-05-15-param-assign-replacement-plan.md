@@ -4,7 +4,7 @@
 
 **Goal:** 修复 3 个 gap，删除 param_assign.py (786行)，完成 3-Phase pipeline 全替换，删除 ~811 行代码，hasattr 回退链归零。
 
-**Architecture:** 6 TDD tasks: (1) param_binding 签名+三层 gating+orchestrator 调整，(2) 删除 registered_callbacks dead code，(3) func_fp_params/param_usage 从 state 迁到 engine，(4) 移除所有 hasattr 回退链，(5) 移除 Fix B + field_call 双读，(6) 删除 param_assign.py + 最终清理。
+**Architecture:** 6 TDD tasks 按严格顺序执行: (1) param_binding 签名+三层 gating+orchestrator 调整，(2) 删除 registered_callbacks dead code，(3) 删除 param_assign.py + 最终清理，(4) func_fp_params/param_usage 从 state 迁到 engine，(5) 移除所有 hasattr 回退链，(6) 移除 Fix B + field_call 双读。关键约束：Task 3（删除 param_assign）必须在 Task 4（声明 DataflowEngine 字段）之前执行，因 param_assign 的 `getattr(dataflow, 'func_fp_params', None)` 模式在字段声明后会返回 `{}` 而非 `None`，破坏 hasattr 回退链。
 
 **Tech Stack:** Python 3.11, tree-sitter-c, pytest (`.venv/bin/python`)
 
@@ -14,16 +14,16 @@
 
 ```
 src/ethunter/analyzer/
-├─ param_assign.py      DELETE   786→✗
-├─ orchestrator.py      MODIFY   152→130  Remove param_assign + Fix B; add param_binding to TARGET_RESOLVERS
-├─ param_binding.py     MODIFY   207→230  Signature: analyze(tree, filepath, symbol_table, dataflow) + 3-layer gating
-├─ dataflow.py          MODIFY   222→220  Delete registered_callbacks/register_callback; declare func_fp_params/param_usage
-├─ param_helpers.py     MODIFY   210→210  prepare() writes engine fields directly (not state)
-├─ field_call.py        MODIFY   282→240  Remove old-format dual-read; hasattr chain replacement
-├─ param_dispatch.py    MODIFY   140→140  hasattr chain: func_fp_params → dataflow.func_fp_params
-├─ callback_reg.py      MODIFY    55→55   hasattr chain: param_usage → dataflow.param_usage
+├─ param_assign.py      DELETE   786→✗  (Task 3)
+├─ orchestrator.py      MODIFY   152→130  Remove param_assign + Fix B; add param_binding to TARGET_RESOLVERS (Tasks 1,3,6)
+├─ param_binding.py     MODIFY   207→230  Signature + 3-layer gating (Task 1) + hasattr removal (Task 5)
+├─ dataflow.py          MODIFY   222→220  Delete registered_callbacks (Task 2); declare func_fp_params/param_usage (Task 4)
+├─ param_helpers.py     MODIFY   210→210  prepare() writes engine fields directly (Task 4)
+├─ field_call.py        MODIFY   282→240  Remove old-format dual-read (Task 6); hasattr chain replacement (Task 5)
+├─ param_dispatch.py    MODIFY   140→140  hasattr chain (Task 5)
+├─ callback_reg.py      MODIFY    55→55   hasattr chain (Task 5)
 tests/
-└─ test_et_bench.py     MODIFY     1→1    Remove xfail marker on test_type_aware_key_isolates_different_struct_types
+└─ test_et_bench.py     MODIFY     1→1    Remove xfail marker (Task 3)
 ```
 
 ---
@@ -102,7 +102,7 @@ def analyze(
     macros = _collect_simple_macros(tree)
 ```
 
-In `_collect_call_params`, replace the registration gate (lines 69-70 of current param_binding.py):
+In `_collect_call_params`, replace the registration gate in all 3 argument-type branches (identifier, cast_expression, pointer_expression):
 
 ```python
 # OLD:
@@ -122,8 +122,6 @@ In `_collect_call_params`, replace the registration gate (lines 69-70 of current
                                 if is_reg:
                                     dataflow.registration_sites.append({...})
 ```
-
-This change must be applied identically in all 3 argument-type branches (identifier, cast_expression, pointer_expression).
 
 - [ ] **Step 4: Update orchestrator.py — add param_binding as first TARGET_RESOLVER**
 
@@ -174,7 +172,7 @@ from ethunter.analyzer import (
 )
 ```
 
-Keep `param_assign` import for now (still needed for Phase 1b callback detection and _register_phase until final cleanup).
+Keep `param_assign` import for now (still needed for Phase 1b callback detection and _register_phase until Task 3).
 
 - [ ] **Step 5: Run TDD test to verify it passes**
 
@@ -213,11 +211,9 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 In `src/ethunter/analyzer/dataflow.py`, remove from `VariableState`:
 
 ```python
-# REMOVE these 2 lines:
+# REMOVE this field:
     registered_callbacks: set[str] = field(default_factory=set)
-```
 
-```python
 # REMOVE this method:
     def register_callback(self, func_name: str) -> None:
         self.registered_callbacks.add(func_name)
@@ -258,7 +254,104 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 
 ---
 
-### Task 3: Promote func_fp_params / param_usage from state to engine (Spec 4.4)
+### Task 3: Delete param_assign.py + final orchestrator cleanup (Spec 4.1)
+
+> **关键约束**: 此 Task 必须在 Task 4（声明 DataflowEngine 字段）之前执行。
+
+**Files:**
+- Delete: `src/ethunter/analyzer/param_assign.py`
+- Modify: `src/ethunter/analyzer/orchestrator.py`
+- Modify: `tests/test_et_bench.py`
+
+- [ ] **Step 1: Delete param_assign.py**
+
+Run: `rm src/ethunter/analyzer/param_assign.py`
+
+- [ ] **Step 2: Clean orchestrator.py**
+
+Remove the `import param_assign` block:
+```python
+# REMOVE:
+from ethunter.analyzer import (
+    param_assign,
+    direct_assign,
+    initializer_assign,
+    cast_assign,
+)
+# REPLACE with:
+from ethunter.analyzer import (
+    direct_assign,
+    initializer_assign,
+    cast_assign,
+)
+```
+
+Remove the `param_assign._register_phase()` call (search for `_register_phase`):
+```python
+# REMOVE:
+    # Phase 1a (cont'd): param_assign pre-scan for cross-file state
+    for filepath, tree in trees.items():
+        param_assign._register_phase(tree, filepath, symbol_table, engine)
+```
+
+Remove the `param_assign.analyze()` Phase 1b call (search for `Phase 1b: param_assign`):
+```python
+# REMOVE:
+    # Phase 1b: param_assign callback detection
+    for filepath, tree in trees.items():
+        edges = param_assign.analyze(
+            tree=tree,
+            filepath=filepath,
+            symbol_table=symbol_table,
+            dataflow=engine,
+        )
+        for edge in edges:
+            graph.add_edge(edge)
+```
+
+Update the comment at the top to reflect the final pipeline.
+
+- [ ] **Step 3: Remove xfail marker from type-aware test**
+
+In `tests/test_et_bench.py`:
+```python
+# OLD:
+@pytest.mark.xfail(reason="Requires full type-aware field_call migration (Task 11 cleanup)")
+def test_type_aware_key_isolates_different_struct_types():
+
+# NEW:
+def test_type_aware_key_isolates_different_struct_types():
+```
+
+- [ ] **Step 4: Run full test suite — verify recall + FPR**
+
+Run: `.venv/bin/python -m pytest tests/ -q`
+Expected: All tests PASS (including previously-xfailed test). 157/157.
+
+Run: `.venv/bin/python -m pytest tests/test_et_bench.py::test_et_bench_report -v -s 2>&1 | grep -E "^(fnptr|OVERALL)"`
+Expected: 8/9 scenarios at 100% recall, FPR ≤ 30.54%.
+
+- [ ] **Step 5: Commit final**
+
+```bash
+git rm src/ethunter/analyzer/param_assign.py
+git add src/ethunter/analyzer/orchestrator.py tests/test_et_bench.py
+git commit -m "refactor: delete param_assign.py — full 3-phase pipeline replacement
+
+Removed param_assign (786 lines). _register_phase replaced by
+param_helpers.prepare(). callback detection replaced by callback_reg
+Phase 3. Final pipeline: Phase 1a (prepare) → Phase 1 (TARGET_RESOLVERS
+with param_binding first) → Phase 2 (CALL_DETECTORS + param_dispatch)
+→ Phase 3 (callback_reg with covered_callees). xfail marker removed.
+
+Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 4: Promote func_fp_params / param_usage from state to engine (Spec 4.4)
+
+> **前置条件**: Task 3 已完成（param_assign 已删除，其 `getattr(dataflow, 'func_fp_params', None)` 模式不再存在）。
 
 **Files:**
 - Modify: `src/ethunter/analyzer/dataflow.py`
@@ -304,7 +397,7 @@ In `src/ethunter/analyzer/param_helpers.py`, change `prepare()`:
 - [ ] **Step 3: Run full test suite**
 
 Run: `.venv/bin/python -m pytest tests/ -q`
-Expected: All tests PASS (param_assign still reads from `dataflow.state` via hasattr, but engine now also has the fields directly)
+Expected: All tests PASS (readers still use dataflow.state until Task 5 migration)
 
 - [ ] **Step 4: Commit**
 
@@ -313,15 +406,17 @@ git add src/ethunter/analyzer/dataflow.py src/ethunter/analyzer/param_helpers.py
 git commit -m "refactor: promote func_fp_params/param_usage from state to engine
 
 Declare func_fp_params and param_usage on DataflowEngine (previously
-deferred due to hasattr fallback chain conflict). prepare() now writes
-directly to engine fields instead of dataflow.state dynamic attributes.
+deferred due to hasattr fallback chain conflict with param_assign).
+prepare() now writes directly to engine fields.
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ```
 
 ---
 
-### Task 4: Remove hasattr fallback chains (Spec 4.5)
+### Task 5: Remove hasattr fallback chains (Spec 4.5)
+
+> **前置条件**: Task 4 已完成（字段已声明在 DataflowEngine 上）。
 
 **Files:**
 - Modify: `src/ethunter/analyzer/param_binding.py`
@@ -331,7 +426,6 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 
 - [ ] **Step 1: Update param_binding.py**
 
-Replace:
 ```python
 # OLD (line 39):
     func_fp_params = getattr(dataflow.state, 'func_fp_params', {})
@@ -342,7 +436,6 @@ Replace:
 
 - [ ] **Step 2: Update param_dispatch.py**
 
-Replace:
 ```python
 # OLD (line 25):
     func_fp_params = getattr(dataflow.state, 'func_fp_params', {})
@@ -353,7 +446,6 @@ Replace:
 
 - [ ] **Step 3: Update callback_reg.py**
 
-Replace:
 ```python
 # OLD (line 26):
     param_usage = getattr(dataflow.state, 'param_usage', {})
@@ -367,10 +459,10 @@ Replace:
 Replace the callback-of-callback func_fp_params access (line 221):
 ```python
 # OLD:
-                    func_fp_params = getattr(dataflow.state, 'func_fp_params', None) if hasattr(dataflow, 'state') else None
+    func_fp_params = getattr(dataflow.state, 'func_fp_params', None) if hasattr(dataflow, 'state') else None
 
 # NEW:
-                    func_fp_params = dataflow.func_fp_params
+    func_fp_params = dataflow.func_fp_params
 ```
 
 - [ ] **Step 5: Run full test suite**
@@ -386,14 +478,14 @@ git commit -m "refactor: remove hasattr fallback chains for func_fp_params/param
 
 All readers now use dataflow.func_fp_params and dataflow.param_usage directly
 (instead of getattr(dataflow.state, 'xxx', {}) pattern). Possible now that
-fields are declared on DataflowEngine (Task 3).
+param_assign is deleted (Task 3) and fields are declared on DataflowEngine (Task 4).
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ```
 
 ---
 
-### Task 5: Remove Fix B + field_call dual-read (Spec 4.2 + 4.3)
+### Task 6: Remove Fix B + field_call dual-read (Spec 4.2 + 4.3)
 
 **Files:**
 - Modify: `src/ethunter/analyzer/orchestrator.py`
@@ -401,7 +493,7 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 
 - [ ] **Step 1: Remove Fix B from orchestrator.py**
 
-Delete lines 144-151 (the Fix B post-processing filter):
+Delete the Fix B post-processing filter:
 ```python
 # REMOVE this entire block:
     # Fix B: suppress callback edges where callee is covered by field_call
@@ -421,7 +513,6 @@ Delete lines 144-151 (the Fix B post-processing filter):
 
 In `field_call.py`, in `_visit()` inside the `if field_path:` block, remove the old-format fallback that follows the type-aware Layer 0 check:
 
-Find and remove these lines:
 ```python
 # REMOVE:
                     if not targets:
@@ -431,12 +522,12 @@ Find and remove these lines:
                         targets = dataflow.resolve(f'<struct:{field_path}>')
 ```
 
-Note: Keep `<chain:path>` and all subsequent fallback layers (suffix match, garray, etc.) — those are independent of param_assign.
+Keep `<chain:path>` and all subsequent fallback layers (suffix match, garray, etc.) — those are independent of param_assign.
 
 - [ ] **Step 3: Run full test suite**
 
 Run: `.venv/bin/python -m pytest tests/ -q`
-Expected: All tests PASS (callback_reg Phase 3 Stage 2 replaces Fix B; old-format keys no longer needed)
+Expected: All tests PASS (callback_reg Phase 3 Stage 2 replaces Fix B; old-format keys no longer written after param_assign deletion)
 
 - [ ] **Step 4: Commit**
 
@@ -446,97 +537,7 @@ git commit -m "refactor: remove Fix B post-processing + field_call old-format du
 
 Fix B replaced by callback_reg Phase 3 Stage 2 (covered_callees pre-check).
 Old-format <gstruct:path> and <struct:path> keys are no longer written
-(after param_assign removal in next task), so dual-read code removed.
-
-Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
-```
-
----
-
-### Task 6: Delete param_assign.py + final orchestrator cleanup (Spec 4.1)
-
-**Files:**
-- Delete: `src/ethunter/analyzer/param_assign.py`
-- Modify: `src/ethunter/analyzer/orchestrator.py`
-- Modify: `tests/test_et_bench.py`
-
-- [ ] **Step 1: Delete param_assign.py**
-
-Run: `rm src/ethunter/analyzer/param_assign.py`
-
-- [ ] **Step 2: Clean orchestrator.py**
-
-Remove the `import param_assign` block:
-```python
-# REMOVE these 3 lines:
-from ethunter.analyzer import (
-    param_assign,
-    direct_assign,
-```
-Replace with:
-```python
-from ethunter.analyzer import (
-    direct_assign,
-```
-
-Remove the `param_assign._register_phase()` call (lines 78-80):
-```python
-# REMOVE these 3 lines:
-    # Phase 1a (cont'd): param_assign pre-scan for cross-file state
-    for filepath, tree in trees.items():
-        param_assign._register_phase(tree, filepath, symbol_table, engine)
-```
-
-Remove the `param_assign.analyze()` Phase 1b call (lines 92-100):
-```python
-# REMOVE these 9 lines:
-    # Phase 1b: param_assign callback detection
-    for filepath, tree in trees.items():
-        edges = param_assign.analyze(
-            tree=tree,
-            filepath=filepath,
-            symbol_table=symbol_table,
-            dataflow=engine,
-        )
-        for edge in edges:
-            graph.add_edge(edge)
-```
-
-Update the comment at the top to reflect the final pipeline.
-
-- [ ] **Step 3: Remove xfail marker from type-aware test**
-
-In `tests/test_et_bench.py`, change:
-```python
-# OLD:
-@pytest.mark.xfail(reason="Requires full type-aware field_call migration (Task 11 cleanup)")
-def test_type_aware_key_isolates_different_struct_types():
-
-# NEW:
-def test_type_aware_key_isolates_different_struct_types():
-```
-
-- [ ] **Step 4: Run full test suite — verify recall + FPR**
-
-Run: `.venv/bin/python -m pytest tests/ -q`
-Expected: All tests PASS (including previously-xfailed test). 157/157.
-
-Run: `.venv/bin/python -m pytest tests/test_et_bench.py::test_et_bench_report -v -s 2>&1 | grep -E "^(fnptr|OVERALL)"`
-Expected: 8/9 scenarios at 100% recall, FPR ≤ 30.54%.
-
-- [ ] **Step 5: Commit final**
-
-```bash
-git rm src/ethunter/analyzer/param_assign.py
-git add src/ethunter/analyzer/orchestrator.py tests/test_et_bench.py
-git commit -m "refactor: delete param_assign.py — full 3-phase pipeline replacement
-
-Removed param_assign (786 lines). _register_phase replaced by
-param_helpers.prepare(). callback detection replaced by callback_reg
-Phase 3. Final pipeline: Phase 1a (prepare) → Phase 1 (TARGET_RESOLVERS
-with param_binding first) → Phase 2 (CALL_DETECTORS + param_dispatch)
-→ Phase 3 (callback_reg with covered_callees). Fix B and old-format
-dual-read already removed in prior tasks. xfail marker removed.
+(param_assign already deleted in Task 3), so dual-read code removed.
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ```
@@ -556,6 +557,6 @@ After all tasks complete:
 - [ ] `tests/test_et_bench.py::test_fnptr_cast_full_recall` — PASS (100% recall)
 - [ ] `tests/test_et_bench.py::test_type_aware_key_isolates_different_struct_types` — PASS (no longer xfail)
 - [ ] `tests/test_et_bench.py::test_param_binding_suppresses_non_fnptr_args_as_registration` — PASS
-- [ ] `grep -rn 'getattr.*func_fp_params\|getattr.*param_usage\|hasattr.*state.*func_fp_params\|hasattr.*state.*param_usage' src/ethunter/analyzer/` — zero matches (hasattr chains gone)
-- [ ] `ls src/ethunter/analyzer/param_assign.py` — file not found (deleted)
-- [ ] `grep -n 'param_assign' src/ethunter/analyzer/orchestrator.py` — zero matches (no references)
+- [ ] `grep -rn 'getattr.*func_fp_params\|getattr.*param_usage\|hasattr.*state.*func_fp_params\|hasattr.*state.*param_usage' src/ethunter/analyzer/` — zero matches
+- [ ] `ls src/ethunter/analyzer/param_assign.py` — file not found
+- [ ] `grep -n 'param_assign' src/ethunter/analyzer/orchestrator.py` — zero matches
