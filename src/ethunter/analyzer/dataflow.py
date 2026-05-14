@@ -12,9 +12,6 @@ class VariableState:
     targets: dict[str, set[str]] = field(default_factory=dict)
     # Maps variable name -> type info (e.g., 'fp', 'fp[]', 'struct.member')
     var_types: dict[str, str] = field(default_factory=dict)
-    # Callback registry: registered function names
-    registered_callbacks: set[str] = field(default_factory=set)
-
     def assign(self, var_name: str, target: str) -> None:
         if var_name not in self.targets:
             self.targets[var_name] = set()
@@ -30,8 +27,7 @@ class VariableState:
         return self.targets.get(var_name, set()).copy()
 
     def register_callback(self, func_name: str) -> None:
-        self.registered_callbacks.add(func_name)
-
+        """No-op: registered_callbacks was dead code. Removed in arch refactor Phase 2."""
 
 @dataclass
 class DataflowEngine:
@@ -87,11 +83,7 @@ class DataflowEngine:
         return self.state.targets
 
     def register_callback(self, func_name: str) -> None:
-        self.state.register_callback(func_name)
-
-    @property
-    def registered_callbacks(self) -> set[str]:
-        return self.state.registered_callbacks
+        """No-op: registered_callbacks was dead code. Removed in arch refactor Phase 2."""
 
     # === New: ParamTracker ===
 
