@@ -26,14 +26,17 @@ def analyze(
     symbol_names = symbol_table.all_function_names
 
     def _assign_gstruct(field_path: str, target: str) -> None:
-        """Write gstruct dataflow key in both formats."""
+        """Write gstruct dataflow key in old + new (field_tail) formats."""
         dataflow.assign(f'<gstruct:{field_path}>', target)  # backward compat
-        if hasattr(dataflow, 'store'):
-            dataflow.store.assign_struct_field(f'gstruct:{field_path}', target)
         base_var = field_path.split('.')[0]
+        field_tail = dataflow.store.compute_field_tail(field_path) if hasattr(dataflow, 'store') else field_path
+        if hasattr(dataflow, 'store'):
+            dataflow.store.assign_struct_field(f'gstruct:{base_var}.{field_tail}', target)
         struct_type = symbol_table.get_var_type(base_var)
         if struct_type:
             dataflow.assign(f'<gstruct>:{struct_type}.{field_path}>', target)
+            if hasattr(dataflow, 'store'):
+                dataflow.store.assign_struct_field(f'gstruct:{struct_type}.{field_tail}', target)
 
     def _extract_cast_target(node: ts.Node) -> str | None:
         """Extract function name from inside a cast_expression."""
@@ -431,6 +434,8 @@ def analyze(
                     struct_type = _resolve_struct_type(node)
                     if struct_type:
                         symbol_table.record_var_type(var_name, struct_type)
+                        if hasattr(dataflow, 'store'):
+                            dataflow.store.aliases[var_name] = struct_type
                     _process_init_list(init_list, var_name, struct_type)
         for child in node.children:
             _visit(child)

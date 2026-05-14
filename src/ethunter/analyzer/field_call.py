@@ -88,9 +88,12 @@ def analyze(
     # Pass 1: collect all field assignments across the entire file
     for fa in collect_field_assignments(tree, unwrap_fn=getattr(dataflow, 'unwrap_cast', None)):
         if fa.resolved_value is not None and fa.resolved_value in symbol_names:
-            dataflow.assign(f'<gstruct:{fa.field_path}>', fa.resolved_value)
+            dataflow.assign(f'<gstruct:{fa.field_path}>', fa.resolved_value)  # backward compat
             if hasattr(dataflow, 'store'):
-                dataflow.store.assign_struct_field(f'gstruct:{fa.field_path}', fa.resolved_value)
+                base_var = fa.field_path.split('.')[0]
+                field_tail = dataflow.store.compute_field_tail(fa.field_path)
+                dataflow.store.assign_struct_field(f'gstruct:{base_var}.{field_tail}',
+                                                   fa.resolved_value)
 
     # Pass 1b: collect pointer resolutions (local var -> global array/struct name)
     pointer_resolutions = collect_pointer_resolutions(tree)

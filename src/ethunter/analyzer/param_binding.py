@@ -223,6 +223,8 @@ def _resolve_fields(tree: ts.Tree, filepath: str, symbol_table, dataflow) -> Non
             continue
         field_path = fa.field_path
         field_name = field_path.split('.')[-1]
+        base_var = field_path.split('.')[0]
+        field_tail = dataflow.store.compute_field_tail(field_path) if hasattr(dataflow, 'store') else field_path
 
         if fa.value_node and fa.value_node.type == 'call_expression':
             call_func = fa.value_node.child_by_field_name('function') or fa.value_node.children[0]
@@ -231,13 +233,15 @@ def _resolve_fields(tree: ts.Tree, filepath: str, symbol_table, dataflow) -> Non
                 ret_targets = dataflow.resolve_returned_field(func_name)
                 for t in ret_targets:
                     dataflow.assign(f'<gstruct:{field_path}>', t)
-                    dataflow.store.assign_struct_field(f'gstruct:{field_path}', t)
+                    if hasattr(dataflow, 'store'):
+                        dataflow.store.assign_struct_field(f'gstruct:{base_var}.{field_tail}', t)
         elif fa.resolved_value is not None:
             param_name = fa.resolved_value
             targets = param_mappings.get(param_name, set())
             for t in targets:
                 dataflow.assign(f'<struct:{field_path}>', t)
-                dataflow.store.assign_struct_field(f'gstruct:{field_path}', t)
+                if hasattr(dataflow, 'store'):
+                    dataflow.store.assign_struct_field(f'gstruct:{base_var}.{field_tail}', t)
             df_targets = dataflow.resolve(f'{fa.enclosing_func}:{param_name}')
             if not df_targets:
                 df_targets = dataflow.resolve(param_name)
@@ -246,7 +250,8 @@ def _resolve_fields(tree: ts.Tree, filepath: str, symbol_table, dataflow) -> Non
             for t in df_targets:
                 dataflow.assign(f'<struct:{field_path}>', t)
                 dataflow.assign(f'<struct:{field_name}>', t)
-                dataflow.store.assign_struct_field(f'gstruct:{field_path}', t)
+                if hasattr(dataflow, 'store'):
+                    dataflow.store.assign_struct_field(f'gstruct:{base_var}.{field_tail}', t)
             if fa.enclosing_func in func_params:
                 params = func_params[fa.enclosing_func]
                 if param_name in params:
