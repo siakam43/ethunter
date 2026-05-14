@@ -471,13 +471,30 @@ Similarly for Layer 1 (`<gstruct:path>`), Layer 2 (`<struct:path>`), etc. — ad
 Run: `PYTHONPATH=src .venv/bin/python -m pytest tests/test_et_bench.py -q`
 Expected: All 56 pass
 
-- [ ] **Step 5: Remove old VariableState.targets**
+- [ ] **Step 5: Remove old VariableState.targets AND fix param_dispatch scope**
 
 After all readers are switched and verified, remove the backward-compat fallbacks:
 
-1. In `direct_call_fp.py`: remove `dataflow.resolve(f'<var>:{caller_func}:{var_name}')` and `dataflow.resolve(var_name)` fallbacks
-2. In `array_call.py`: remove `dataflow.resolve(f'<garray:{arr_name}>')`, `dataflow.resolve(arr_name)`, `dataflow.resolve('<initializer>')` fallbacks
-3. In `param_dispatch.py`: remove the old dataflow.targets iteration
+1. In `direct_call_fp.py`: remove `dataflow.resolve(f'<var>:{caller_func}:{var_name}')` and `dataflow.resolve(var_name)` fallbacks; use only `dataflow.store.resolve_func_var(caller_func, var_name)`
+2. In `array_call.py`: remove `dataflow.resolve(f'<garray:{arr_name}>')`, `dataflow.resolve(arr_name)`, `dataflow.resolve('<initializer>')` fallbacks; use only `dataflow.store.resolve_global_array(arr_name)`
+3. In `param_dispatch.py`: **replace the ScopedStore aggregation loop from Step 3 with targeted lookup**:
+```python
+    # Replace the func_vars.items() loop with targeted lookup:
+    param_mappings: dict[str, set[str]] = {}
+    # Scan func_vars for the CURRENT enclosing function only
+    for (func, pname), targets in dataflow.store.func_vars.items():
+        if func == '<global>':
+            continue  # skip non-function entries
+        if pname not in param_mappings:
+            param_mappings[pname] = set()
+        param_mappings[pname].update(targets)
+```
+Note: this still aggregates across all functions (interim). The final fix replaces this entirely with:
+```python
+    # Phase C final: use call_site_targets + targeted func_vars lookup only
+    # Remove the param_mappings aggregation loop
+```
+See Task C2 Step 2 for the final implementation.
 4. In `field_call.py`: remove old `dataflow.resolve(...)` fallbacks (keep suffix scans for now)
 5. In `dataflow.py`: remove `VariableState.targets` dict and its `assign`/`resolve` methods
 6. In all producers: remove old `dataflow.assign(...)` calls (keep only ScopedStore writes)
@@ -1214,25 +1231,25 @@ def _resolve_callback_of_callback(targets, call_node, func_fp_params,
 
 - [ ] **Step 3: Safety net — run side-by-side with old suffix logic**
 
-Before removing suffix scans, add a debug mode to `FieldResolver` that compares results:
+Before removing suffix scans, add a debug comparison that reconstructs the old suffix behavior from `dataflow.store.struct_fields` (no longer uses `dataflow.targets` — it was removed in Phase A):
 
 ```python
 # Temporary: in field_call.analyze(), add debug comparison
-def _resolve_with_old_suffix(field_path, dataflow):
-    """OLD suffix scan logic — for comparison only. Remove after validation."""
+def _resolve_with_old_suffix(field_path, store):
+    """OLD suffix scan logic — for comparison only. Remove after validation.
+    Uses ScopedStore.struct_fields instead of old dataflow.targets."""
     targets = set()
-    # ... copy the old suffix scan code here ...
     if '.' in field_path:
         parts = field_path.split('.')
         for i in range(1, len(parts)):
             suffix = '.'.join(parts[i:])
-            for key, vals in dataflow.targets.items():
-                if key.endswith(f'.{suffix}>') and vals:
+            for key, vals in store.struct_fields.items():
+                if key.endswith(f'.{suffix}') and vals:
                     targets.update(vals)
     return targets
 
 # In _visit(), after resolver.resolve():
-# old_targets = _resolve_with_old_suffix(field_path, dataflow)
+# old_targets = _resolve_with_old_suffix(field_path, dataflow.store)
 # missed = old_targets - targets
 # if missed:
 #     print(f"DEBUG: FieldResolver missed: {field_path} -> {missed}")
@@ -1440,7 +1457,18 @@ git commit -m "feat: add confidence + evidence fields to CallEdge"
 
 - [ ] **Step 2: Annotate field_call.py with strategy-aware confidence**
 
-Update `_visit()` in field_call.analyze() to get confidence from the strategy chain:
+Update `_visit()` in field_call.analyze() to get confidence from the strategy chain. Also update `_resolve_callback_of_callback()` — callback-of-callback edges are `callback_param` with `confidence='medium'`:
+
+```python
+# In _resolve_callback_of_callback(), for each edge:
+                    edges.append(CallEdge(
+                        # ... existing fields ...
+                        indirect_kind='callback_param',
+                        caller_line=call_node.start_point[0] + 1,
+                        confidence='medium',
+                        evidence='callback-of-callback via field_call',
+                    ))
+```
 
 ```python
 # Modify FieldResolver.resolve() to return (targets, strategy_name)
