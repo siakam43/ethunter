@@ -265,7 +265,7 @@ def _classify_param_usage(node, func_fp_params, func_params, param_usage):
     _scan(node)
 
 
-def prepare(tree: ts.Tree, filepath: str, dataflow) -> None:
+def prepare(tree: ts.Tree, filepath: str, dataflow, symbol_table=None) -> None:
     """Phase 1a: Cross-file pre-scan. Collect function metadata and register
     param->field / return->field mappings. Writes to engine only, no edges.
 
@@ -348,3 +348,60 @@ def prepare(tree: ts.Tree, filepath: str, dataflow) -> None:
         if not hasattr(dataflow.state, 'param_usage'):
             dataflow.state.param_usage = {}
         dataflow.state.param_usage.update(param_usage)
+
+    # Collect parameter types (new — Phase B)
+    if symbol_table is not None:
+        _collect_param_types(tree.root_node, symbol_table)
+
+
+def _collect_param_types(root_node, symbol_table) -> None:
+    """Scan function definitions and record parameter struct types.
+
+    For each function parameter declared as 'struct type_name *ptr',
+    record (func_name, param_name) -> 'type_name' in symbol_table.
+    """
+    def _scan(node):
+        if node.type == 'function_definition':
+            decl = _find_child(node, 'function_declarator')
+            if not decl:
+                for c in node.children:
+                    if c.type in ('pointer_declarator', 'parenthesized_declarator'):
+                        d = _find_child(c, 'function_declarator')
+                        if d:
+                            decl = d
+                            break
+            if not decl:
+                for child in node.children:
+                    _scan(child)
+                return
+
+            fname, inner_decl = _find_func_name_from_decl(decl)
+            if not fname:
+                for child in node.children:
+                    _scan(child)
+                return
+
+            plist = _find_child(inner_decl, 'parameter_list')
+            if plist:
+                for p in plist.children:
+                    if p.type == 'parameter_declaration':
+                        pname = _extract_param_name(p)
+                        if not pname:
+                            continue
+                        for tc in p.children:
+                            if tc.type == 'type_identifier' and tc.text:
+                                type_name = tc.text.decode('utf-8')
+                                if symbol_table.resolve_typedef(type_name):
+                                    symbol_table.record_func_var_type(fname, pname, type_name)
+                                break
+                            if tc.type == 'struct_specifier':
+                                for sc in tc.children:
+                                    if sc.type == 'type_identifier' and sc.text:
+                                        type_name = sc.text.decode('utf-8')
+                                        symbol_table.record_func_var_type(fname, pname, type_name)
+                                        break
+
+        for child in node.children:
+            _scan(child)
+
+    _scan(root_node)

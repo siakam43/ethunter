@@ -113,6 +113,7 @@ class SymbolTable:
         self._structs: dict[str, list[tuple[str, str]]] = {}
         self._var_types: dict[str, str] = {}
         self._struct_fields: dict[str, list[str]] = {}
+        self._func_var_types: dict[tuple[str, str], str] = {}
 
     def record_var_type(self, var_name: str, struct_type: str) -> None:
         """Record that a variable is declared as a struct type."""
@@ -121,6 +122,19 @@ class SymbolTable:
     def get_var_type(self, var_name: str) -> str | None:
         """Get the struct type of a variable, or None if unknown."""
         return self._var_types.get(var_name)
+
+    def record_func_var_type(self, func: str, var: str, struct_type: str) -> None:
+        """Record a function-scoped variable's struct type."""
+        self._func_var_types[(func, var)] = struct_type
+
+    def get_func_var_type(self, func: str | None, var: str) -> str | None:
+        """Get struct type for a variable, checking func-scoped first,
+        then global var types."""
+        if func:
+            result = self._func_var_types.get((func, var))
+            if result:
+                return result
+        return self._var_types.get(var)
 
     def record_struct_fields(self, struct_type: str, fields: list[str]) -> None:
         """Record the field names for a struct type."""

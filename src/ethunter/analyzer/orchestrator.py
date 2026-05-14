@@ -73,7 +73,7 @@ def run_all_analyses(
 
     # Phase 1a: Cross-file pre-scan for metadata
     for filepath, tree in trees.items():
-        param_helpers.prepare(tree, filepath, engine)
+        param_helpers.prepare(tree, filepath, engine, symbol_table)
 
     # Phase 1a (cont'd): param_assign pre-scan for cross-file state
     for filepath, tree in trees.items():
