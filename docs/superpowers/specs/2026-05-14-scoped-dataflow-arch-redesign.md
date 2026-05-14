@@ -55,7 +55,8 @@ class ScopedStore:
     func_vars: dict[tuple[str, str], set[str]] = field(default_factory=dict)
     
     # Struct field targets: "gstruct:<path>" -> {target_functions}
-    # Path is either "<base_var>.<field_path>" or "<struct_type>.<field_path>"
+    # Path is either "<base_var>.<field_tail>" or "<struct_type>.<field_tail>"
+    # where field_tail is the field path WITHOUT the base variable name
     struct_fields: dict[str, set[str]] = field(default_factory=dict)
     
     # Global array targets: "garray:<var_name>" -> {target_functions}
@@ -72,16 +73,13 @@ class ScopedStore:
 | `direct_assign` | `func_vars` | `(enclosing_func, var_name)` | `{targets}` |
 | `cast_assign` | `func_vars` | `(enclosing_func, var_name)` | `{targets}` |
 | `param_binding` | `func_vars` | `(call_name, pname)` | `{targets}` |
-| `helpers.collect_field_assignments` | `func_vars` | `(enclosing_func, var_name)` | `{targets}` |
-| `initializer_assign` | `struct_fields` | `gstruct:<var>.<path>` AND `gstruct:<type>.<path>` | `{targets}` |
-| `field_call` Pass 1 | `struct_fields` | `gstruct:<var>.<path>` | `{targets}` |
-| `param_binding._resolve_fields` | `struct_fields` | `gstruct:<var>.<path>` AND `gstruct:<type>.<path>` | `{targets}` |
+| `initializer_assign` | `struct_fields` | `gstruct:<var>.<field_tail>` AND `gstruct:<type>.<field_tail>` | `{targets}` |
+| `field_call` Pass 1 | `struct_fields` | `gstruct:<var>.<field_tail>` | `{targets}` |
+| `param_binding._resolve_fields` | `struct_fields` | `gstruct:<var>.<field_tail>` AND `gstruct:<type>.<field_tail>` | `{targets}` |
 | `initializer_assign` | `global_arrays` | `garray:<name>` | `{targets}` |
 | New vtable module | `vtable_entries` | `vtable:<type>.<field>` | `{targets}` |
 
-**No bare-name writes.** Every write is scoped to a function or a qualified struct/array key.
-
-Note: `helpers.py` currently writes bare variable names via `collect_field_assignments` (`helpers.py:104,115`). In Phase A, these are updated to accept a `store` parameter and write to `func_vars[(enclosing_func, var_name)]` instead.
+**No bare-name writes.** Every write is scoped to a function or a qualified struct/array key. (`helpers.py:handle_init_declarator` also writes bare names but is uncalled dead code — no migration needed.)
 
 ### 1.4 Read Rules
 
@@ -90,7 +88,7 @@ Note: `helpers.py` currently writes bare variable names via `collect_field_assig
 | `direct_call_fp` | `func_vars` | `(caller_func, var_name)` | Exact lookup only |
 | `param_dispatch` Pass A | `func_vars` | `(enclosing_func, param_name)` | Exact lookup |
 | `param_dispatch` Pass A | `call_site_targets` | `(caller, callee, arg_idx)` | Per-call-site bridge |
-| `field_call` | `struct_fields` | `gstruct:<type>.<path>` first, then `gstruct:<var>.<path>` | Strategy chain |
+| `field_call` | `struct_fields` | `gstruct:<type>.<field_tail>` first, then `gstruct:<var>.<field_tail>` | Strategy chain |
 | `array_call` | `global_arrays` | `garray:<name>` | Exact lookup |
 
 **No bare-name reads. No suffix scans. No iteration over all keys.**
@@ -151,10 +149,25 @@ Four key formats, each in its own store:
 ### 2.3 Dual-Write Convention
 
 When struct type IS known, producers write BOTH:
-- `gstruct:<var>.<path>` → `{targets}`  (exact var name match)
-- `gstruct:<type>.<path>` → `{targets}`  (type-aware, cross-var match)
+- `gstruct:<var>.<field_tail>` → `{targets}`  (exact var name match)
+- `gstruct:<type>.<field_tail>` → `{targets}`  (type-aware, cross-var match)
 
-The resolver tries type-aware first. If the same struct type appears under different variable names in different functions, the type-aware key bridges them without suffix scanning.
+Where:
+- `var` is the base variable name (e.g., `handler`, `ctx`)
+- `type` is the resolved struct type (e.g., `my_type`, `SSL_CTX`)
+- `field_tail` is the field path WITHOUT the base variable (e.g., `cb`, `ext.alpn_select_cb`)
+
+Examples:
+| Assignment | Var | Type | Writes |
+|---|---|---|---|
+| `handler.cb = func_a` | `handler` | `my_type` | `gstruct:handler.cb` + `gstruct:my_type.cb` |
+| `ctx.ext.cb = func_b` | `ctx` | `SSL_CTX` | `gstruct:ctx.ext.cb` + `gstruct:SSL_CTX.ext.cb` |
+
+On resolution (e.g., `h->cb()` where `h` has type `my_type`):
+1. Lookup `gstruct:my_type.cb` (type-aware, replacing `h` with resolved type) → MATCH
+2. Fallback: `gstruct:h.cb` (exact var name match)
+
+The resolver constructs the type-aware key by replacing `base_var` with the resolved struct type. If the same struct type appears under different variable names in different functions, the type-aware key bridges them without suffix scanning.
 
 ### 2.4 Eliminated Formats
 
@@ -234,16 +247,24 @@ Each strategy is a separate class with a single `resolve(context) -> set[str]` m
 
 **TypeAwareStructLookup**
 ```
-Query: struct_fields["gstruct:<type>.<path>"]
-Where type = symbol_table.get_var_type(base_var)
-FP risk: zero (type + field path are exact)
+Query: struct_fields["gstruct:<type>.<field_tail>"]
+Where:
+  type = symbol_table.get_func_var_type(caller_func, base_var)
+  field_tail = field_path.split('.', 1)[1] if '.' in field_path else field_path
+  (base_var is replaced by the resolved struct type)
+Example: h->cb() where h has type my_type
+  field_tail = "cb", query = "gstruct:my_type.cb"
+FP risk: zero (type + field tail are exact)
 ```
 
 **ExactPathStructLookup**
 ```
-Query: struct_fields["gstruct:<base_var>.<field_path>"]
-FP risk: zero (variable name + field path are exact)
-Limit: only matches when the SAME variable name was used in the assignment
+Query: struct_fields["gstruct:<base_var>.<field_tail>"]
+Where field_tail = field_path.split('.', 1)[1] if '.' in field_path else ''
+FP risk: zero (variable name + field tail are exact)
+Limit: only matches when the SAME variable name was used in the assignment,
+  OR when the field is a direct child (no field_tail, just the field name).
+  For direct field access (e.g., "cb"), the key is "gstruct:<var>.cb".
 ```
 
 **TypeAwareVtableLookup**
@@ -327,14 +348,21 @@ Post:     field_callees filter + dedup       ← cleans up dual-module overlap
 ### 4.2 Target State
 
 ```
-Phase 0:   direct_call
-Phase 1a:  param_helpers.prepare + register_phase (metadata, no edges)
-Phase 1:   param_binding + TARGET_RESOLVERS (write ScopedStore, no edges)
-Phase 1b:  param_binding._resolve_fields (field resolution, no edges)
-Phase 2:   CALL_DETECTORS + param_dispatch (read ScopedStore, produce edges)
+Phase 0:   direct_call (independent, uses only symbol_names)
+Phase 1a:  param_helpers.prepare + register_phase (metadata, writes func_params, func_fp_params, param_types, param→field mappings)
+Phase 1a*: field_call Pass 1 (ALL files) — collect field assignments, write struct_fields entries
+Phase 1:   param_binding + TARGET_RESOLVERS (ALL files) — write ScopedStore, no edges
+Phase 1b:  param_binding._resolve_fields (ALL files) — field resolution, no edges
+Phase 2:   field_call Pass 2 + direct_call_fp + array_call + param_dispatch (read ScopedStore, produce edges)
 Phase 3:   callback_reg (produces edges with suppression)
 Final:    dlsym_fp + dedup_by_confidence
 ```
+
+Key change: `field_call` is split into two passes across the pipeline boundary:
+- **Pass 1 (Phase 1a\*)**: collect field assignments from ALL files, write `struct_fields` entries. This runs BEFORE Phase 2 so cross-file field assignments are visible.
+- **Pass 2 (Phase 2)**: resolve call expressions using `FieldResolver`, produce `field_call` edges.
+
+The `field_call` module exposes two entry points: `field_call.collect(tree, filepath, dataflow)` and `field_call.analyze(tree, filepath, dataflow, symbol_table, ...)`.
 
 ### 4.3 Removed Code (Phased)
 
@@ -344,7 +372,7 @@ Final:    dlsym_fp + dedup_by_confidence
 - `param_assign._propagate_call_site()` — absorbed into `param_binding`
 - Orchestrator post-hoc `field_callees` filter (lines 152-161):
   - **Kept in Phases A-C** as safety net for callback_param suppression by field_call
-  - **Removed in Phase D** — replaced by confidence-based dedup (Section 5.3)
+  - **Removed in Phase D** — replaced by confidence-based dedup (Section 5.4)
   - `callback_reg`'s own Stage 2 coverage check (using `covered_callees`) remains throughout
 
 ### 4.4 Retained from param_assign.py
@@ -391,7 +419,13 @@ class CallEdge:
 | `callback_reg` Stage 3 | `callback_reg` | heuristic | `low` | `"heuristic: registration name match"` |
 | `dlsym_fp` | `dlsym_fp` | string literal | `low` | `"dlsym string literal match"` |
 
-### 5.3 Deduplication with Confidence
+### 5.3 JSON Serialization Impact
+
+CallEdge's `to_dict()` and `from_dict()` in `model.py` must include `confidence` and `evidence`. `json_output.py` serializes them automatically via `to_dict()`. Downstream consumers (query engine, DOT output) are unaffected — these fields are metadata.
+
+The benchmark `ground_truth.json` format does NOT include confidence — benchmark tests compare (caller, callee) pairs regardless of confidence, so existing tests are backward compatible. `compute_recall` with `min_confidence` parameter (Section 5.5) is optional filtering for new assertions.
+
+### 5.4 Deduplication with Confidence
 
 When duplicate (caller, callee) pairs exist, keep the edge with HIGHER confidence:
 
@@ -409,7 +443,7 @@ def dedup_with_confidence(edges: list[CallEdge]) -> list[CallEdge]:
     return list(edge_map.values())
 ```
 
-### 5.4 Confidence Assertions in Tests
+### 5.5 Confidence Assertions in Tests
 
 Add optional filter to benchmark tests:
 ```python
@@ -487,11 +521,12 @@ def prepare(tree, filepath, engine, symbol_table):
 # "handler" is a local variable. Extract its declared type from
 # the enclosing function's declaration list.
 base_var = field_path.split('.')[0]
+field_tail = field_path.split('.', 1)[1]  # everything after base_var
 struct_type = resolve_struct_type(base_var, enclosing_func, tree)
 if struct_type:
     symbol_table.record_func_var_type(enclosing_func, base_var, struct_type)
-    # Write type-aware key
-    dataflow.store.struct_fields[f'gstruct:{struct_type}.{field_path}'] = targets
+    # Write type-aware key (var name replaced by struct type)
+    dataflow.store.struct_fields[f'gstruct:{struct_type}.{field_tail}'] = targets
 ```
 
 ---
@@ -525,6 +560,10 @@ if struct_type:
 4. Remove `param_assign.analyze()` from orchestrator
 5. Run et_bench: FPR should decrease significantly; recall must not drop
 6. If recall drops on any category: identify which strategy needs enhancement BEFORE proceeding
+7. **Safety net**: Prior to removing suffix scans, run `test_et_bench_report` with the strategy chain AND the old suffix logic side-by-side. If the strategy chain misses edges the suffix scan catches, analyze each missing edge:
+   - If gap is in type tracking: enhance type collection (return to Phase B scope)
+   - If gap is a structural pattern the strategy chain can't express: add a new strategy (not a suffix fallback)
+   - If gap is across files with unknown types: consider adding a same-file-scoped struct_fields prefix scan as a temporary measure (place AFTER all exact strategies, marked `confidence: low`)
 
 **Acceptance**: All 56 et_bench tests pass; recall ≥ 98.86%; FPR < 20%
 
