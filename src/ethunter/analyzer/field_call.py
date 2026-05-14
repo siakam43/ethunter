@@ -89,6 +89,8 @@ def analyze(
     for fa in collect_field_assignments(tree, unwrap_fn=getattr(dataflow, 'unwrap_cast', None)):
         if fa.resolved_value is not None and fa.resolved_value in symbol_names:
             dataflow.assign(f'<gstruct:{fa.field_path}>', fa.resolved_value)
+            if hasattr(dataflow, 'store'):
+                dataflow.store.assign_struct_field(f'gstruct:{fa.field_path}', fa.resolved_value)
 
     # Pass 1b: collect pointer resolutions (local var -> global array/struct name)
     pointer_resolutions = collect_pointer_resolutions(tree)

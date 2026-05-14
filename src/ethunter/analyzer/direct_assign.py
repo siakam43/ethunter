@@ -29,6 +29,8 @@ def analyze(
         enclosing = find_enclosing_function(node, tree.root_node) or '<global>'
         dataflow.assign(f'<var>:{enclosing}:{var_name}', target)
         dataflow.assign(var_name, target)  # backward compat during migration
+        if hasattr(dataflow, 'store'):
+            dataflow.store.assign_func_var(enclosing, var_name, target)
 
     def _visit(node: ts.Node) -> None:
         # assignment_expression: fp = func_name
@@ -105,6 +107,8 @@ def analyze(
                     if targets:
                         enclosing = find_enclosing_function(node, tree.root_node) or '<global>'
                         dataflow.targets[f'<var>:{enclosing}:{var_name}'] = set()
+                        if hasattr(dataflow, 'store'):
+                            dataflow.store.func_vars.setdefault((enclosing, var_name), set())
                         for t in targets:
                             _assign(var_name, t, node)
             # Re-check init_declarators with deferred resolution

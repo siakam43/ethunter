@@ -28,6 +28,8 @@ def analyze(
         enclosing = find_enclosing_function(node, tree.root_node) or '<global>'
         dataflow.assign(f'<var>:{enclosing}:{var_name}', target)
         dataflow.assign(var_name, target)  # backward compat during migration
+        if hasattr(dataflow, 'store'):
+            dataflow.store.assign_func_var(enclosing, var_name, target)
 
     def _extract_cast_target(node: ts.Node) -> str | None:
         """Extract function name from inside a cast_expression."""

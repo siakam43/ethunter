@@ -28,6 +28,9 @@ def analyze(
     def _assign_gstruct(field_path: str, target: str) -> None:
         """Write gstruct dataflow key in both old and type-aware formats."""
         dataflow.assign(f'<gstruct:{field_path}>', target)  # always old format
+        # NEW: dual-write to ScopedStore (hasattr guard for VariableState compat)
+        if hasattr(dataflow, 'store'):
+            dataflow.store.assign_struct_field(f'gstruct:{field_path}', target)
         base_var = field_path.split('.')[0]
         struct_type = symbol_table.get_var_type(base_var)
         if struct_type:
@@ -222,6 +225,8 @@ def analyze(
                     target = _extract_function_from_value(c)
                     if target:
                         dataflow.assign(f'<garray:{var_name}>', target)
+                        if hasattr(dataflow, 'store'):
+                            dataflow.store.assign_global_array(var_name, target)
                         _assign_gstruct(f'{var_name}.{index}', target)
                         if index < len(field_names):
                             field_name = field_names[index]
@@ -231,6 +236,8 @@ def analyze(
                     inner = c.children[-1] if c.children else None
                     if inner and inner.type == 'identifier' and inner.text:
                         dataflow.assign(f'<garray:{var_name}>', inner.text.decode('utf-8'))
+                        if hasattr(dataflow, 'store'):
+                            dataflow.store.assign_global_array(var_name, inner.text.decode('utf-8'))
                 index += 1
             elif c.type == 'initializer_list':
                 inner_index = 0
@@ -240,6 +247,8 @@ def analyze(
                             target = _extract_function_from_value(inner)
                             if target:
                                 dataflow.assign(f'<garray:{var_name}>', target)
+                                if hasattr(dataflow, 'store'):
+                                    dataflow.store.assign_global_array(var_name, target)
                                 if inner_index < len(field_names):
                                     field_name = field_names[inner_index]
                                     _assign_gstruct(f'{var_name}.{field_name}', target)
@@ -247,6 +256,8 @@ def analyze(
                             ref = inner.children[-1] if inner.children else None
                             if ref and ref.type == 'identifier' and ref.text:
                                 dataflow.assign(f'<garray:{var_name}>', ref.text.decode('utf-8'))
+                                if hasattr(dataflow, 'store'):
+                                    dataflow.store.assign_global_array(var_name, ref.text.decode('utf-8'))
                         inner_index += 1
 
     def _track_pointer_field_assignments(
