@@ -25,6 +25,14 @@ def analyze(
     edges: list = []
     symbol_names = symbol_table.all_function_names
 
+    def _assign_gstruct(field_path: str, target: str) -> None:
+        """Write gstruct dataflow key in both old and type-aware formats."""
+        dataflow.assign(f'<gstruct:{field_path}>', target)  # always old format
+        base_var = field_path.split('.')[0]
+        struct_type = symbol_table.get_var_type(base_var)
+        if struct_type:
+            dataflow.assign(f'<gstruct>:{struct_type}.{field_path}>', target)
+
     def _extract_cast_target(node: ts.Node) -> str | None:
         """Extract function name from inside a cast_expression."""
         # Try unwrap_cast if dataflow has it (DataflowEngine)
@@ -115,6 +123,9 @@ def analyze(
         return struct_fields
 
     struct_field_map = _collect_struct_field_names()
+    # Register struct fields with SymbolTable for type-aware lookup
+    for stype, fields in struct_field_map.items():
+        symbol_table.record_struct_fields(stype, fields)
 
     # Build typedef alias → struct type mapping
     typedef_map: dict[str, str] = {}
@@ -184,7 +195,7 @@ def analyze(
                 if value:
                     target = _extract_function_from_value(value)
                     if target and field_name:
-                        dataflow.assign(f'<gstruct:{var_name}.{field_name}>', target)
+                        _assign_gstruct(f'{var_name}.{field_name}', target)
             return
 
         # Positional (pure identifier/cast list): { func_a, (type)func_b, ... }
@@ -211,10 +222,10 @@ def analyze(
                     target = _extract_function_from_value(c)
                     if target:
                         dataflow.assign(f'<garray:{var_name}>', target)
-                        dataflow.assign(f'<gstruct:{var_name}.{index}>', target)
+                        _assign_gstruct(f'{var_name}.{index}', target)
                         if index < len(field_names):
                             field_name = field_names[index]
-                            dataflow.assign(f'<gstruct:{var_name}.{field_name}>', target)
+                            _assign_gstruct(f'{var_name}.{field_name}', target)
                 elif c.type in _STRUCT_REF_TYPES:
                     # &struct_name -> store struct name for downstream resolution
                     inner = c.children[-1] if c.children else None
@@ -231,7 +242,7 @@ def analyze(
                                 dataflow.assign(f'<garray:{var_name}>', target)
                                 if inner_index < len(field_names):
                                     field_name = field_names[inner_index]
-                                    dataflow.assign(f'<gstruct:{var_name}.{field_name}>', target)
+                                    _assign_gstruct(f'{var_name}.{field_name}', target)
                         elif inner.type in _STRUCT_REF_TYPES:
                             ref = inner.children[-1] if inner.children else None
                             if ref and ref.type == 'identifier' and ref.text:
@@ -408,6 +419,8 @@ def analyze(
                 var_name = extract_identifier_from_declarator(declarator)
                 if var_name:
                     struct_type = _resolve_struct_type(node)
+                    if struct_type:
+                        symbol_table.record_var_type(var_name, struct_type)
                     _process_init_list(init_list, var_name, struct_type)
         for child in node.children:
             _visit(child)
