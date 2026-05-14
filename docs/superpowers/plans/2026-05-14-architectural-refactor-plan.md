@@ -14,7 +14,7 @@
 
 ```
 src/ethunter/analyzer/
-├─ dataflow.py          MODIFY  208→280  新增: func_params, registration_sites, covered_callees, param_alias_map
+├─ dataflow.py          MODIFY  208→280  新增: func_params, registration_sites, covered_callees, call_site_targets, param_alias_map (NOT func_fp_params/param_usage — see Task 1 note)
 ├─ symbol_table.py       MODIFY  141→180  新增: record_var_type, get_var_type, record_struct_fields, get_struct_fields
 ├─ param_helpers.py     CREATE  ~210    _collect_func_params, _collect_fnptr_typedefs, _classify_param_usage, _collect_simple_macros, prepare()
 ├─ param_binding.py     CREATE  ~220    Phase 1: analyze() — 调点参数映射 + field 赋值 → dataflow + registration_sites
@@ -47,8 +47,6 @@ Edit `src/ethunter/analyzer/dataflow.py`. After the `aliases` field (line 54), a
     param_alias_map: dict[tuple[str, str], str] = field(default_factory=dict)
 
     # Cross-file function metadata (populated by param_helpers.prepare)
-    func_fp_params: dict[str, set[int]] = field(default_factory=dict)
-    param_usage: dict[tuple[str, int], str] = field(default_factory=dict)
     func_params: dict[str, list[str]] = field(default_factory=dict)
 
     # Phase 3 registration tracking
@@ -57,6 +55,11 @@ Edit `src/ethunter/analyzer/dataflow.py`. After the `aliases` field (line 54), a
 
     # Per-call-site targets (Phase 1 → Phase 2 handoff)
     call_site_targets: dict = field(default_factory=dict)  # (caller, callee, arg_idx) -> {targets}
+
+    # NOTE: func_fp_params and param_usage remain on dataflow.state during migration.
+    # Declaring them as @dataclass fields would change getattr(dataflow, 'func_fp_params', None)
+    # from returning None to {}, breaking the hasattr fallback chain in param_assign.
+    # They will be promoted to engine level when old code is deleted (Task 11).
 ```
 
 Remove the `aliases: dict[str, str] = field(default_factory=dict)` if redundant — keep it.
