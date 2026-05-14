@@ -31,12 +31,12 @@ def analyze(
         base_var = field_path.split('.')[0]
         field_tail = dataflow.store.compute_field_tail(field_path) if hasattr(dataflow, 'store') else field_path
         if hasattr(dataflow, 'store'):
-            dataflow.store.assign_struct_field(f'gstruct:{base_var}.{field_tail}', target)
+            dataflow.store.assign_struct_field(f'gstruct:{base_var}.{field_tail}', target, filepath)
         struct_type = symbol_table.get_var_type(base_var)
         if struct_type:
             dataflow.assign(f'<gstruct>:{struct_type}.{field_path}>', target)
             if hasattr(dataflow, 'store'):
-                dataflow.store.assign_struct_field(f'gstruct:{struct_type}.{field_tail}', target)
+                dataflow.store.assign_struct_field(f'gstruct:{struct_type}.{field_tail}', target, filepath)
 
     def _extract_cast_target(node: ts.Node) -> str | None:
         """Extract function name from inside a cast_expression."""

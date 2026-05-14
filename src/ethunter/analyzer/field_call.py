@@ -71,12 +71,12 @@ def collect(tree: ts.Tree, filepath: str, dataflow, symbol_table,
                 base_var = fa.field_path.split('.')[0]
                 field_tail = dataflow.store.compute_field_tail(fa.field_path)
                 dataflow.store.assign_struct_field(f'gstruct:{base_var}.{field_tail}',
-                                                   fa.resolved_value)
+                                                   fa.resolved_value, filepath)
                 # If type is known, also write type-aware key
                 struct_type = symbol_table.get_func_var_type(fa.enclosing_func, base_var)
                 if struct_type:
                     dataflow.store.assign_struct_field(f'gstruct:{struct_type}.{field_tail}',
-                                                       fa.resolved_value)
+                                                       fa.resolved_value, filepath)
     _collect_local_var_types(tree, symbol_table)
     _collect_cast_types(tree, symbol_table)
 

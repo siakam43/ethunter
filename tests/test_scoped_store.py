@@ -63,3 +63,21 @@ class TestFieldTail:
     def test_single_dot_at_end(self):
         store = ScopedStore()
         assert store.compute_field_tail("a.") == ""
+
+
+class TestStructFieldFiles:
+    def test_records_filepath(self):
+        store = ScopedStore()
+        store.assign_struct_field("gstruct:handler.cb", "func_a", "fixture.c")
+        assert "fixture.c" in store.struct_field_files["gstruct:handler.cb"]
+
+    def test_multiple_targets_same_file(self):
+        store = ScopedStore()
+        store.assign_struct_field("gstruct:h.cb", "func_a", "callee.c")
+        store.assign_struct_field("gstruct:h.cb", "func_b", "callee.c")
+        assert store.struct_field_files["gstruct:h.cb"] == {"callee.c"}
+
+    def test_no_filepath(self):
+        store = ScopedStore()
+        store.assign_struct_field("gstruct:h.cb", "func_a")
+        assert "gstruct:h.cb" not in store.struct_field_files

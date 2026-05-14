@@ -234,7 +234,7 @@ def _resolve_fields(tree: ts.Tree, filepath: str, symbol_table, dataflow) -> Non
                 for t in ret_targets:
                     dataflow.assign(f'<gstruct:{field_path}>', t)
                     if hasattr(dataflow, 'store'):
-                        dataflow.store.assign_struct_field(f'gstruct:{base_var}.{field_tail}', t)
+                        dataflow.store.assign_struct_field(f'gstruct:{base_var}.{field_tail}', t, filepath)
         elif fa.resolved_value is not None:
             param_name = fa.resolved_value
             targets = param_mappings.get(param_name, set())

@@ -38,6 +38,10 @@ class ScopedStore:
     # Populated by initializer_assign during global struct initialization
     aliases: dict[str, str] = field(default_factory=dict)
 
+    # Per-file index: key -> set of source filepaths
+    # Used by Tier 3 for same-file scoped suffix matching
+    struct_field_files: dict[str, set[str]] = field(default_factory=dict)
+
     # --- func_vars helpers ---
 
     def assign_func_var(self, func: str, var: str, target: str) -> None:
@@ -53,11 +57,15 @@ class ScopedStore:
 
     # --- struct_fields helpers ---
 
-    def assign_struct_field(self, key: str, target: str) -> None:
+    def assign_struct_field(self, key: str, target: str, filepath: str = '') -> None:
         """Assign a target to a struct field. Key format: 'gstruct:<path>'."""
         if key not in self.struct_fields:
             self.struct_fields[key] = set()
         self.struct_fields[key].add(target)
+        if filepath:
+            if key not in self.struct_field_files:
+                self.struct_field_files[key] = set()
+            self.struct_field_files[key].add(filepath)
 
     def resolve_struct_field(self, key: str) -> set[str]:
         """Resolve targets for a struct field key."""
