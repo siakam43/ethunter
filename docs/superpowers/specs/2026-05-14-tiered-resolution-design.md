@@ -91,7 +91,102 @@ def resolve_field_call(field_path: str, base_var: str,
     return set(), 'none', ''
 ```
 
-### 1.3 Tier Coverage Estimates
+### 1.3 End-to-End Example
+
+Using et_bench `fnptr-struct/example_2` (cpp_reader — same variable name `pfile` in both functions, typedef `cpp_reader` available):
+
+```c
+// callee side: assignment
+void cpp_init_callbacks(cpp_reader *pfile) {
+    pfile->cb.before_define = dump_queued_macros;  // field_path="pfile.cb.before_define"
+}
+
+// caller side: invocation  
+void cpp_pop_definition(cpp_reader *pfile, ...) {
+    pfile->cb.before_define(pfile);  // field_path="pfile.cb.before_define", base_var="pfile"
+}
+```
+
+**Type collection (Phase 1a):**
+```
+param_helpers._collect_param_types:
+  ("cpp_init_callbacks", "pfile") → "cpp_reader"
+  ("cpp_pop_definition", "pfile") → "cpp_reader"
+```
+
+**Field assignment write (Phase 1a*):**
+```
+field_call.collect processes pfile->cb.before_define = dump_queued_macros:
+  base_var = "pfile"
+  field_tail = "cb.before_define"
+  struct_type = "cpp_reader"  // from symbol_table
+  
+  struct_fields["gstruct:pfile.cb.before_define"] = {"dump_queued_macros"}     // exact path key
+  struct_fields["gstruct:cpp_reader.cb.before_define"] = {"dump_queued_macros"} // type-aware key
+  struct_field_files["gstruct:pfile.cb.before_define"] = {"fixture.c"}
+  struct_field_files["gstruct:cpp_reader.cb.before_define"] = {"fixture.c"}
+```
+
+**Resolution (Phase 2):**
+```
+field_call.analyze processes pfile->cb.before_define(pfile) in cpp_pop_definition:
+  field_path = "pfile.cb.before_define"
+  base_var = "pfile"
+  field_tail = "cb.before_define"
+  caller_func = "cpp_pop_definition"
+  filepath = "fixture.c"
+
+Tier 1: struct_type = symbol_table.get_func_var_type("cpp_pop_definition", "pfile") = "cpp_reader"
+        resolve_struct_field("gstruct:cpp_reader.cb.before_define")
+        → {"dump_queued_macros"}  ✓ TIER 1 HIT, confidence=high
+
+Result: edge ("cpp_pop_definition", "dump_queued_macros") with confidence='high'
+```
+
+**Contrast with variable-name-mismatch scenario:**
+```c
+void func1(struct my_type *handler) { handler->cb = func_a; }  // var: handler
+void func2(struct my_type *obj)     { obj->cb(); }              // var: obj (different!)
+```
+
+```
+Tier 1: struct_type = "my_type" (known from parameter declaration)
+        resolve_struct_field("gstruct:my_type.cb") → {"func_a"}  ✓ TIER 1 HIT
+Tier 2: (not reached — Tier 1 already succeeded)
+        // Even if Tier 1 failed, Tier 2 would fail: key "gstruct:obj.cb" ≠ "gstruct:handler.cb"
+```
+
+**Contrast with type-unknown scenario:**
+```c
+void func1(void *ptr) { ((struct ctx*)ptr)->handler = func_a; }  // type unknown
+void func2(void *ptr) { ((struct ctx*)ptr)->handler(); }          // type unknown, same file
+```
+
+```
+Tier 1: struct_type = None (void* param, no type info)
+Tier 2: resolve_struct_field("gstruct:ptr.handler") → {"func_a"}  ✓ (same var name!)
+        // Both use "ptr" — exact path match works even without type info
+```
+
+**Contrast with worst-case scenario (diff name, unknown type, cross-file):**
+```c
+// file_a.c
+void setup(void *h) { ((struct ctx*)h)->cb = func_a; }  // var: h, no type
+
+// file_b.c  
+void invoke(void *obj) { ((struct ctx*)obj)->cb(); }     // var: obj, no type
+```
+
+```
+Tier 1: struct_type = None
+Tier 2: "gstruct:obj.cb" → empty (stored as "gstruct:h.cb")
+Tier 3: suffix scan ".cb" → finds "gstruct:h.cb" BUT file check fails (file_b ≠ file_a)
+Tier 4: cross-file suffix → finds {"func_a"}, confidence='low'
+```
+
+This tiered flow ensures recall is preserved even in the worst case, while maximizing the precision for the common cases.
+
+### 1.4 Tier Coverage Estimates
 
 Based on analysis of 104 et_bench fixtures:
 
@@ -99,10 +194,28 @@ Based on analysis of 104 et_bench fixtures:
 |---|---|---|---|---|
 | 1 | Type-aware exact key | ~65% | 0% | high |
 | 2 | Exact path key | ~20% | 0% | high |
-| 3 | Same-file suffix | ~12% | ~10% | medium |
-| 4 | Cross-file suffix | ~3% | high | low |
+| 3 | Same-file suffix | ~12% | ~10-20% | medium |
+| 4 | Cross-file suffix | ~3% | ~100% | low |
 
-Tier 1 + 2 cover ~85% of struct field calls — all with zero FP risk. Tier 3 handles most remaining cases with file-scoped safety. Tier 4 is a rarely-hit safety net.
+Tier 1 + 2 cover ~85% of struct field calls — all with zero FP risk. Tier 3 FPR depends on same-file struct type diversity: in small fixtures (1-2 struct types) it's near zero; in large files (many structs, overlapping field names like `.handler`, `.cb`) it can rise to ~20%. Tier 4 is a rarely-hit safety net.
+
+### 1.5 Side-by-Side Comparison Note
+
+During E3 verification, the old 15-layer suffix scan must be adapted to read from `store.struct_fields` (not `dataflow.targets`) for fair comparison. The old target keys use `<gstruct:...>` angle brackets; store keys use `gstruct:...` plain. The comparison function:
+
+```python
+def _resolve_with_old_suffix_from_store(field_path, store):
+    """OLD suffix scan — reading from store, for comparison only."""
+    targets = set()
+    if '.' in field_path:
+        parts = field_path.split('.')
+        for i in range(1, len(parts)):
+            suffix = '.'.join(parts[i:])
+            for key, vals in store.struct_fields.items():
+                if key.endswith(f'.{suffix}'):  # no angle brackets compared to old code
+                    targets.update(vals)
+    return targets
+```
 
 ---
 
@@ -144,10 +257,28 @@ Collected by new function `_collect_cast_types()` also called from `field_call.c
 def _collect_cast_types(tree, symbol_table):
     """Scan for cast expressions that reveal struct types.
     
-    ((struct ctx*)ctx)->handler → ctx has type "ctx"
+    Patterns:
+      ((struct ctx*)var)->field = func   → var has type "ctx"
+      ((my_type*)ptr)->field()           → ptr has type "my_type"
     """
-    # Walk AST for cast_expression nodes
-    # Extract cast target type and record on symbol_table
+    def _scan(node, current_func):
+        if node.type == 'assignment_expression' or node.type == 'call_expression':
+            # Check if LHS or func is a field_expression with a cast base
+            for child in node.children:
+                if child.type == 'field_expression':
+                    base = child.children[0] if child.children else None
+                    if base and base.type == 'parenthesized_expression':
+                        inner = base.children[1] if len(base.children) > 1 else None
+                        if inner and inner.type == 'cast_expression':
+                            # Extract type from cast: (struct name *) → "name"
+                            type_name = _extract_cast_struct_type(inner)
+                            operand = inner.child_by_field_name('value')
+                            if operand and operand.type == 'identifier' and operand.text and type_name:
+                                var_name = operand.text.decode('utf-8')
+                                symbol_table.record_func_var_type(current_func, var_name, type_name)
+        for child in node.children:
+            _scan(child, current_func)
+    _scan(tree.root_node, None)
 ```
 
 ### 2.2 Updated Type Collection Pipeline
@@ -245,17 +376,51 @@ To safely remove it:
 ### 4.2 Remove Old Fallback Stack from field_call
 
 After Tier 1-4 chain is verified to match or exceed old stack recall:
-1. Delete all 15 old fallback layers from `field_call.analyze()._visit()`
-2. Delete `_resolve_with_old_suffix()` debug function
-3. `_visit()` now calls only `resolve_field_call()` + callback-of-callback handling
+1. Delete all 15 old fallback layers from `field_call.analyze()._visit()` (~110 lines: layers 0 through vtable_init)
+2. Delete the duplicate Pass 1 logic inside `analyze()` (lines 88-96 — already handled by `collect()`)
+3. Delete `_resolve_with_old_suffix()` debug function
+4. `analyze()` no longer writes to dataflow — its only side effect is producing edges
+5. `_visit()` now calls only `resolve_field_call()` + callback-of-callback handling
 
 ### 4.3 Remove VariableState.targets
 
 After field_call and param_dispatch are fully migrated:
 1. Remove `VariableState.targets` dict, `assign()`, `resolve()` methods
 2. Remove `DataflowEngine.assign()`, `resolve()`, `targets` backward compat
-3. Remove old `dataflow.assign(...)` calls from all producers
-4. Remove old `dataflow.resolve(...)` calls from all readers
+3. Remove old `dataflow.assign(...)` calls from all producers (keep only ScopedStore writes)
+4. Remove old `dataflow.resolve(...)` calls from all readers (keep only ScopedStore reads)
+
+Internal method migrations:
+
+**`resolve_call_site_param`**: Currently uses `self.state.resolve(arg_name)` to find argument targets, then `self.state.assign(field_key, target)` to propagate to struct fields. Migration:
+```python
+# Step 1: resolve arg_name against ScopedStore
+# Need callee context — caller passes call_name from param_binding
+arg_targets = self.store.resolve_func_var(callee_name, arg_name)
+if not arg_targets:
+    arg_targets = self.store.resolve_func_var('<global>', arg_name)
+if symbol_names and arg_name in symbol_names:
+    arg_targets.add(arg_name)
+
+# Step 2: write to store (already partially done via Phase A dual-write)
+for target in arg_targets:
+    for field_key in self.param_fields[key]:
+        store_key = field_key[9:-1]  # strip <gstruct:...>
+        self.store.assign_struct_field(store_key, target)
+```
+
+**`resolve_returned_field`**: Currently has its own suffix fallback over `self.state.targets`. Migration to store-based suffix with same-file scoping where filepath is available, or full-store suffix where not:
+```python
+for field_path in self.ret_fields[func_name]:
+    # Exact match via store
+    results.update(self.store.resolve_struct_field(f'gstruct:{field_path}'))
+    # File-scoped suffix if filepath known, else full-store fallback
+    if filepath:
+        for key, vals in self.store.struct_fields.items():
+            if key.endswith(f'.{field_tail}') and filepath in self.store.struct_field_files.get(key, set()):
+                results.update(vals)
+```
+
 5. Update `DataflowEngine.resolve_call_site_param()` and `resolve_returned_field()` to use only store
 
 ### 4.4 Target Pipeline
