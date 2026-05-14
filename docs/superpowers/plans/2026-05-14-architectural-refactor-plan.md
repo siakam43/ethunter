@@ -54,6 +54,9 @@ Edit `src/ethunter/analyzer/dataflow.py`. After the `aliases` field (line 54), a
     # Phase 3 registration tracking
     registration_sites: list = field(default_factory=list)
     covered_callees: set[str] = field(default_factory=set)
+
+    # Per-call-site targets (Phase 1 → Phase 2 handoff)
+    call_site_targets: dict = field(default_factory=dict)  # (caller, callee, arg_idx) -> {targets}
 ```
 
 Remove the `aliases: dict[str, str] = field(default_factory=dict)` if redundant — keep it.
@@ -619,7 +622,8 @@ def analyze(
     and registration_sites. Returns empty list (no edges).
 
     Reads: engine.func_params, engine.func_fp_params (from prepare)
-    Writes: dataflow.targets (param→target mappings), engine.registration_sites
+    Writes: dataflow.targets (param→target mappings), engine.registration_sites,
+            engine.call_site_targets (per-call-site targets for param_dispatch)
     """
     func_params = dataflow.func_params
     func_fp_params = dataflow.func_fp_params
@@ -803,6 +807,9 @@ def analyze(
                         fa.enclosing_func, param_idx, field_path
                     )
 
+    # Store call_site_targets on engine for param_dispatch (Phase 2)
+    dataflow.call_site_targets.update(call_site_targets)
+
     return []  # Phase 1 returns NO edges
 ```
 
@@ -899,13 +906,8 @@ def analyze(
     edges: list[CallEdge] = []
     func_params = dataflow.func_params
 
-    # Collect per-call-site targets from registration_sites (populated by param_binding)
-    call_site_targets: dict[tuple[str, str, int], set[str]] = {}
-    for site in dataflow.registration_sites:
-        cs_key = (site["caller"], site["callee"], site["arg_idx"])
-        if cs_key not in call_site_targets:
-            call_site_targets[cs_key] = set()
-        call_site_targets[cs_key].add(site["target"])
+    # Read per-call-site targets from engine (populated by param_binding Phase 1)
+    call_site_targets = dataflow.call_site_targets
 
     # Phase 2 also reconstructs param_mappings from dataflow keys
     # (for non-registration call sites that param_binding wrote via pname keys)
@@ -1011,7 +1013,56 @@ def analyze(
 Run: `.venv/bin/python -m pytest tests/test_et_bench.py::test_param_dispatch_produces_callback_param_edges -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Write TDD test — Pass A/B dedup prevents O(N×M) explosion**
+
+Append to `tests/test_et_bench.py`:
+
+```python
+def test_param_dispatch_pass_b_skips_when_pass_a_covers():
+    """Pass B should NOT emit (outer, target) when Pass A already emits (inner, target)."""
+    import tree_sitter_c as tsc
+    from tree_sitter import Language, Parser
+    source = b'''
+    typedef void (*fn_t)(void);
+    static void h1(void) {}
+    static void h2(void) {}
+    static void inner(fn_t cb) { cb(); }
+    void outer_a(void) { inner(h1); }
+    void outer_b(void) { inner(h2); }
+    '''
+    lang = Language(tsc.language())
+    parser = Parser(lang)
+    tree = parser.parse(source)
+    from ethunter.analyzer.dataflow import DataflowEngine
+    from ethunter.analyzer.param_helpers import prepare
+    from ethunter.analyzer.param_binding import analyze as param_binding_analyze
+    from ethunter.analyzer.param_dispatch import analyze as param_dispatch_analyze
+    engine = DataflowEngine()
+    prepare(tree, "test.c", engine)
+    param_binding_analyze(tree, "test.c", engine)
+    edges = param_dispatch_analyze(tree, "test.c", engine)
+    pairs = {(e.caller, e.callee) for e in edges}
+    # Pass A: inner -> h1, inner -> h2 (precise: actual fnptr caller)
+    assert ("inner", "h1") in pairs, f"Pass A should emit inner->h1: {pairs}"
+    assert ("inner", "h2") in pairs, f"Pass A should emit inner->h2: {pairs}"
+    # Pass B: outer_a and outer_b should NOT emit (deduped by Pass A)
+    assert ("outer_a", "h1") not in pairs, \
+        f"Pass B should skip outer_a->h1 (covered by Pass A inner->h1): {pairs}"
+    assert ("outer_b", "h2") not in pairs, \
+        f"Pass B should skip outer_b->h2 (covered by Pass A inner->h2): {pairs}"
+```
+
+- [ ] **Step 6: Run dedup test to verify it passes**
+
+Run: `.venv/bin/python -m pytest tests/test_et_bench.py::test_param_dispatch_pass_b_skips_when_pass_a_covers -v`
+Expected: PASS
+
+- [ ] **Step 7: Run all param_dispatch tests**
+
+Run: `.venv/bin/python -m pytest tests/test_et_bench.py::test_param_dispatch_produces_callback_param_edges tests/test_et_bench.py::test_param_dispatch_pass_b_skips_when_pass_a_covers -v`
+Expected: Both PASS.
+
+- [ ] **Step 8: Commit**
 
 ```bash
 git add src/ethunter/analyzer/param_dispatch.py tests/test_et_bench.py
@@ -1143,7 +1194,52 @@ def analyze(
 Run: `.venv/bin/python -m pytest tests/test_et_bench.py::test_callback_reg_suppresses_forwarder -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Write TDD test — coverage suppression (Stage 2)**
+
+Append to `tests/test_et_bench.py`:
+
+```python
+def test_callback_reg_suppress_when_covered_by_field_call():
+    """callback_reg suppressed when callee is in covered_callees (Stage 2)."""
+    import tree_sitter_c as tsc
+    from tree_sitter import Language, Parser
+    source = b'''
+    typedef void (*fn_t)(void);
+    static void my_fn(void) {}
+    struct s { fn_t handler; };
+    static void reg(struct s *o, fn_t f) { o->handler = f; }
+    static void dispatch(struct s *o) { if (o->handler) o->handler(); }
+    void setup(void) { struct s o; reg(&o, my_fn); dispatch(&o); }
+    '''
+    lang = Language(tsc.language())
+    parser = Parser(lang)
+    tree = parser.parse(source)
+    from ethunter.analyzer.dataflow import DataflowEngine
+    from ethunter.analyzer.param_helpers import prepare
+    from ethunter.analyzer.param_binding import analyze as param_binding_analyze
+    from ethunter.analyzer.callback_reg import analyze as callback_reg_analyze
+    engine = DataflowEngine()
+    prepare(tree, "test.c", engine)
+    param_binding_analyze(tree, "test.c", engine)
+    # Simulate field_call coverage: my_fn is dispatched via struct field
+    engine.covered_callees = {"my_fn"}
+    edges = callback_reg_analyze(tree, "test.c", engine)
+    cr_targets = {e.callee for e in edges}
+    assert "my_fn" not in cr_targets, \
+        f"my_fn in covered_callees, callback_reg should be suppressed: {cr_targets}"
+```
+
+- [ ] **Step 6: Run coverage test to verify it passes**
+
+Run: `.venv/bin/python -m pytest tests/test_et_bench.py::test_callback_reg_suppress_when_covered_by_field_call -v`
+Expected: PASS
+
+- [ ] **Step 7: Run all callback_reg tests**
+
+Run: `.venv/bin/python -m pytest tests/test_et_bench.py::test_callback_reg_suppresses_forwarder tests/test_et_bench.py::test_callback_reg_suppress_when_covered_by_field_call -v`
+Expected: Both PASS.
+
+- [ ] **Step 8: Commit**
 
 ```bash
 git add src/ethunter/analyzer/callback_reg.py tests/test_et_bench.py
@@ -1318,19 +1414,18 @@ In `src/ethunter/analyzer/initializer_assign.py`, the existing `_collect_struct_
 
 Then, for each variable declaration that initializes a struct, extract the struct type and call `symbol_table.record_var_type(var_name, struct_type)`.
 
-When writing dataflow keys, use the type-aware format:
+When writing dataflow keys, always write BOTH formats for migration compatibility:
 
 ```python
 # OLD:
 dataflow.assign(f'<gstruct:{field_path}>', target)
 
-# NEW:
+# NEW: always write old format for backward compat + new format if type known
+dataflow.assign(f'<gstruct:{field_path}>', target)  # old format (always)
 base_var = field_path.split('.')[0]
 struct_type = symbol_table.get_var_type(base_var)
 if struct_type:
-    dataflow.assign(f'<gstruct>:{struct_type}.{field_path}>', target)
-else:
-    dataflow.assign(f'<gstruct:{field_path}>', target)  # old format fallback
+    dataflow.assign(f'<gstruct>:{struct_type}.{field_path}>', target)  # new format
 ```
 
 For `<garray>` keys, no change needed — array elements don't have struct types:
@@ -1342,7 +1437,7 @@ dataflow.assign(f'<garray:{var_name}>', target)  # no change
 - [ ] **Step 3: Run ET-Bench recall tests**
 
 Run: `.venv/bin/python -m pytest tests/test_et_bench.py -v`
-Expected: FAIL for global-struct tests if new format keys aren't yet read by field_call (Task 8). This is expected — the old param_assign field_call still reads old format.
+Expected: All recall tests PASS. Dual-write ensures old field_call still finds old-format keys while new format keys are ready for Task 8.
 
 - [ ] **Step 4: Commit**
 
@@ -1410,7 +1505,7 @@ def _resolve_field_targets(field_path, dataflow, symbol_table, pointer_resolutio
             return targets
 
     # Layer 3: garray fallback
-    targets = dataflow.resolve(f'<garray>{base_var}>')
+    targets = dataflow.resolve(f'<garray:{base_var}>')
     if targets:
         return targets
 
