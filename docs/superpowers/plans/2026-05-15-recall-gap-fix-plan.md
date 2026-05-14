@@ -118,7 +118,7 @@ Expected: PASS
 - [ ] **Step 5: Run full test suite**
 
 Run: `.venv/bin/python -m pytest tests/ -q`
-Expected: 157/157 passed, 1 xfailed (no regression)
+Expected: 158 passed, 1 xfailed (no regression; 1 new test added)
 
 - [ ] **Step 6: Commit**
 
@@ -155,11 +155,12 @@ def test_return_field_resolution_after_initializer_assign():
     typedef int (*cb_t)(const void *, const void *, int, int, int, void *, void *);
     struct cert { cb_t sec_cb; };
     typedef struct { cb_t old_cb; } sdb_t;
+    struct ctx { struct cert *cert; };
     static int ssl_default(const void *s, const void *c, int o, int b, int n,
                            void *ex, void *e2) { return 1; }
-    static cb_t get_sec_cb(const void *ctx) {
-        if (!ctx) return NULL;
-        return ((struct cert *)(ctx))->sec_cb;
+    static cb_t get_sec_cb(const struct ctx *ctx) {
+        if (!ctx || !ctx->cert) return NULL;
+        return ctx->cert->sec_cb;  /* direct field_expression — _register_phase can find */
     }
     static int debug_cb(const void *s, const void *c, int o, int b, int n,
                         void *ex, void *e2) {
