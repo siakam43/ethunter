@@ -28,33 +28,38 @@ def analyze(
     symbol_names = symbol_table.all_function_names
     local_mapping = collect_local_fp_assignments(tree, dataflow, symbol_names)
 
-    def _get_targets(var_name: str, caller_func: str | None = None) -> set[str]:
+    def _get_targets(var_name: str, caller_func: str | None = None) -> tuple[set[str], str, str]:
         """Resolve function targets for a variable name.
 
-        Checks in order:
-        1. Scoped key <var>:<caller_func>:<var_name>
-        2. Bare variable name (fallback)
-        3. Local variable from struct field
+        Returns (targets, confidence, evidence).
         """
         targets = set()
+        confidence, evidence = 'medium', 'direct_assign resolution'
         if caller_func:
             if hasattr(dataflow, 'store'):
                 targets = dataflow.store.resolve_func_var(caller_func, var_name)
+                if targets:
+                    confidence, evidence = 'high', 'scoped variable resolution'
                 if not targets:
-                    # Global-scope fallback (variables assigned outside any function)
                     targets = dataflow.store.resolve_func_var('<global>', var_name)
+                    if targets:
+                        confidence, evidence = 'high', 'global variable resolution'
             if not targets:
                 targets = dataflow.resolve(f'<var>:{caller_func}:{var_name}')
+                if targets:
+                    confidence, evidence = 'high', 'scoped variable resolution'
         if not targets:
             targets = dataflow.resolve(var_name)
         if not targets:
             targets = local_mapping.get(var_name, set()).copy()
-        return targets
+            if targets:
+                confidence, evidence = 'medium', 'local fp from struct field'
+        return targets, confidence, evidence
 
     def _add_edges(func_name: str, call_node: ts.Node) -> None:
         """Add call edges for resolved targets."""
         caller = find_enclosing_function(call_node, tree.root_node)
-        targets = _get_targets(func_name, caller)
+        targets, confidence, evidence = _get_targets(func_name, caller)
         if targets:
             for target in targets:
                 edges.append(CallEdge(
@@ -65,6 +70,8 @@ def analyze(
                     type=CallType.INDIRECT,
                     indirect_kind='direct_assign',
                     caller_line=call_node.start_point[0] + 1,
+                    confidence=confidence,
+                    evidence=evidence,
                 ))
 
     def _visit(node: ts.Node) -> None:

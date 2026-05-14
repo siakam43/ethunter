@@ -165,25 +165,21 @@ def run_all_analyses(
             filtered.append(edge)
         graph.edges = filtered
 
-    # Deduplicate: same caller+callee = one edge, prefer direct over indirect
-    edge_map: dict[tuple[str, str], dict] = {}
+    # Deduplicate: keep highest-confidence edge for each (caller, callee) pair
+    _confidence_rank = {'high': 3, 'medium': 2, 'low': 1}
+    edge_map: dict[tuple[str, str], CallEdge] = {}
     for edge in graph.edges:
         key = (edge.caller, edge.callee)
         if key not in edge_map:
-            edge_map[key] = edge.to_dict()
+            edge_map[key] = edge
         else:
-            existing = edge_map[key]
-            if existing.get('type') == 'indirect' and edge.type == CallType.DIRECT:
-                edge_map[key] = edge.to_dict()
+            current_rank = _confidence_rank.get(edge.confidence, 0)
+            existing_rank = _confidence_rank.get(edge_map[key].confidence, 0)
+            if current_rank > existing_rank:
+                edge_map[key] = edge
+            elif current_rank == existing_rank and edge.type == CallType.DIRECT:
+                edge_map[key] = edge
 
-    graph.edges = [CallEdge(
-        caller=d['caller'],
-        callee=d['callee'],
-        caller_file=d.get('caller_file', ''),
-        callee_file=d.get('callee_file', ''),
-        type=CallType(d.get('type', 'direct')),
-        indirect_kind=d.get('indirect_kind', ''),
-        caller_line=d.get('caller_line', 0),
-    ) for d in edge_map.values()]
+    graph.edges = list(edge_map.values())
 
     return graph

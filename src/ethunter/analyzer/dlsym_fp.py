@@ -39,6 +39,8 @@ def analyze(
                                         type=CallType.INDIRECT,
                                         indirect_kind='dlsym_fp',
                                         caller_line=node.start_point[0] + 1,
+                                        confidence='low',
+                                        evidence='dlsym string literal match',
                                     ))
         for child in node.children:
             _visit(child)

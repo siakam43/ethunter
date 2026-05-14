@@ -46,6 +46,9 @@ def analyze(
         if usage == 'unknown' and not _is_registration(callee):
             continue
 
+        confidence, evidence = ('medium', 'behavioral: fnptr called in callee body') \
+            if usage == 'caller' else ('low', f'heuristic: registration name match ({callee})')
+
         edges.append(CallEdge(
             caller=site["caller"],
             callee=target,
@@ -54,6 +57,8 @@ def analyze(
             type=CallType.INDIRECT,
             indirect_kind='callback_reg',
             caller_line=site["line"],
+            confidence=confidence,
+            evidence=evidence,
         ))
 
     return edges

@@ -53,6 +53,8 @@ def analyze(
                             type=CallType.INDIRECT,
                             indirect_kind='array_call',
                             caller_line=node.start_point[0] + 1,
+                            confidence='high',
+                            evidence='global array dispatch',
                         ))
         for child in node.children:
             _visit(child)

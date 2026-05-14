@@ -96,6 +96,8 @@ def analyze(
             type=CallType.INDIRECT,
             indirect_kind='callback_param',
             caller_line=line,
+            confidence='high',
+            evidence='fnptr call in callee body',
         ))
 
     # === Pass B: call-site caller edges (dedup against Pass A) ===
@@ -118,6 +120,8 @@ def analyze(
                 type=CallType.INDIRECT,
                 indirect_kind='callback_param',
                 caller_line=0,
+                confidence='medium',
+                evidence='call-site caller -> target',
             ))
 
     return edges

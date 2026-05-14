@@ -141,8 +141,11 @@ def analyze(
                     base_var = field_path.split('.')[0]
 
                     # NEW: try FieldResolver first (exact key lookups, no FP risk)
+                    found_by_resolver = False
                     if resolver is not None:
                         targets = resolver.resolve(field_path, base_var, caller)
+                        if targets:
+                            found_by_resolver = True
 
                     # Layer 0: type-aware key (original fallback)
                     if not targets:
@@ -285,6 +288,8 @@ def analyze(
                             type=CallType.INDIRECT,
                             indirect_kind='field_call',
                             caller_line=node.start_point[0] + 1,
+                            confidence='high' if found_by_resolver else 'medium',
+                            evidence='FieldResolver exact match' if found_by_resolver else 'field_call fallback resolution',
                         ))
             elif func_node.type == 'identifier' and func_node.text:
                 call_name = func_node.text.decode('utf-8')

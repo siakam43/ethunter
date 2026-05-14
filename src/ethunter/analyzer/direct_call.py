@@ -36,6 +36,8 @@ def analyze(tree: ts.Tree, filepath: str, symbol_names: set[str], **kwargs) -> l
                         callee_file='',
                         type=CallType.DIRECT,
                         caller_line=node.start_point[0] + 1,
+                        confidence='high',
+                        evidence='direct call expression',
                     ))
         for child in node.children:
             _visit(child)
