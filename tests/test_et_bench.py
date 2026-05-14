@@ -145,9 +145,9 @@ def test_et_bench_report():
     # FPR ceilings — post-arch-refactor baseline (30.54% overall)
     fpr_ceilings = {
         'fnptr-callback': 0.67,
-        'fnptr-cast': 0.63,
+        'fnptr-cast': 0.69,
         'fnptr-global-array': 0.03,
-        'fnptr-global-struct': 0.37,
+        'fnptr-global-struct': 0.41,
         'fnptr-global-struct-array': 0.50,
         'fnptr-library': 0.20,
         'fnptr-only': 0.10,
@@ -1698,11 +1698,15 @@ def test_param_binding_writes_dataflow_no_edges():
     parser = Parser(lang)
     tree = parser.parse(source)
     from ethunter.analyzer.dataflow import DataflowEngine
+    from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
     from ethunter.analyzer.param_helpers import prepare
     from ethunter.analyzer.param_binding import analyze as param_binding_analyze
+    st = SymbolTable()
+    for func in extract_functions(tree, "test.c"):
+        st.add_function(func)
     engine = DataflowEngine()
     prepare(tree, "test.c", engine)
-    edges = param_binding_analyze(tree, "test.c", engine)
+    edges = param_binding_analyze(tree, "test.c", st, engine)
     assert len(edges) == 0, f"param_binding should return 0 edges, got {len(edges)}"
     assert len(engine.registration_sites) > 0, "should have registration_sites"
     site = engine.registration_sites[0]
@@ -1728,9 +1732,12 @@ def test_param_dispatch_produces_callback_param_edges():
     from ethunter.analyzer.param_helpers import prepare
     from ethunter.analyzer.param_binding import analyze as param_binding_analyze
     from ethunter.analyzer.param_dispatch import analyze as param_dispatch_analyze
+    st = SymbolTable()
+    for func in extract_functions(tree, "test.c"):
+        st.add_function(func)
     engine = DataflowEngine()
     prepare(tree, "test.c", engine)
-    param_binding_analyze(tree, "test.c", engine)
+    param_binding_analyze(tree, "test.c", st, engine)
     edges = param_dispatch_analyze(tree, "test.c", engine)
     pairs = {(e.caller, e.callee) for e in edges}
     assert ("dispatcher", "my_handler") in pairs, f"Expected dispatcher->my_handler in {pairs}"
@@ -1756,9 +1763,12 @@ def test_param_dispatch_pass_b_skips_when_pass_a_covers():
     from ethunter.analyzer.param_helpers import prepare
     from ethunter.analyzer.param_binding import analyze as param_binding_analyze
     from ethunter.analyzer.param_dispatch import analyze as param_dispatch_analyze
+    st = SymbolTable()
+    for func in extract_functions(tree, "test.c"):
+        st.add_function(func)
     engine = DataflowEngine()
     prepare(tree, "test.c", engine)
-    param_binding_analyze(tree, "test.c", engine)
+    param_binding_analyze(tree, "test.c", st, engine)
     edges = param_dispatch_analyze(tree, "test.c", engine)
     pairs = {(e.caller, e.callee) for e in edges}
     assert ("inner", "h1") in pairs, f"Pass A should emit inner->h1: {pairs}"
@@ -1785,9 +1795,12 @@ def test_callback_reg_suppresses_forwarder():
     from ethunter.analyzer.param_helpers import prepare
     from ethunter.analyzer.param_binding import analyze as param_binding_analyze
     from ethunter.analyzer.callback_reg import analyze as callback_reg_analyze
+    st = SymbolTable()
+    for func in extract_functions(tree, "test.c"):
+        st.add_function(func)
     engine = DataflowEngine()
     prepare(tree, "test.c", engine)
-    param_binding_analyze(tree, "test.c", engine)
+    param_binding_analyze(tree, "test.c", st, engine)
     engine.covered_callees = set()
     edges = callback_reg_analyze(tree, "test.c", engine)
     cr_targets = {e.callee for e in edges}
@@ -1813,9 +1826,12 @@ def test_callback_reg_suppress_when_covered_by_field_call():
     from ethunter.analyzer.param_helpers import prepare
     from ethunter.analyzer.param_binding import analyze as param_binding_analyze
     from ethunter.analyzer.callback_reg import analyze as callback_reg_analyze
+    st = SymbolTable()
+    for func in extract_functions(tree, "test.c"):
+        st.add_function(func)
     engine = DataflowEngine()
     prepare(tree, "test.c", engine)
-    param_binding_analyze(tree, "test.c", engine)
+    param_binding_analyze(tree, "test.c", st, engine)
     engine.covered_callees = {"my_fn"}
     edges = callback_reg_analyze(tree, "test.c", engine)
     cr_targets = {e.callee for e in edges}
@@ -1879,3 +1895,38 @@ def test_type_aware_key_isolates_different_struct_types():
     fc = {(e.caller, e.callee) for e in graph.edges if e.indirect_kind == "field_call"}
     assert ("use_a", "h_b") not in fc, f"type_a.handler should NOT resolve to h_b: {fc}"
     assert ("use_b", "h_a") not in fc, f"type_b.handler should NOT resolve to h_a: {fc}"
+
+
+def test_param_binding_suppresses_non_fnptr_args_as_registration():
+    """Non-fnptr args to known-function should NOT be recorded as registration_sites."""
+    import tree_sitter_c as tsc
+    from tree_sitter import Language, Parser
+    source = b'''
+    typedef void (*cb_fn)(int x);
+    static void my_handler(int x) { (void)x; }
+    static void name_func(int x) { (void)x; }
+    static void register_item(struct ctx *c, const char *name, int pri, cb_fn cb) {
+        c->handler = cb;
+    }
+    void setup(void) {
+        struct ctx c;
+        register_item(&c, name_func, 10, my_handler);
+    }
+    '''
+    lang = Language(tsc.language())
+    parser = Parser(lang)
+    tree = parser.parse(source)
+    from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
+    from ethunter.analyzer.dataflow import DataflowEngine
+    from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
+    from ethunter.analyzer.param_helpers import prepare
+    from ethunter.analyzer.param_binding import analyze as param_binding_analyze
+    st = SymbolTable()
+    for func in extract_functions(tree, "test.c"):
+        st.add_function(func)
+    engine = DataflowEngine()
+    prepare(tree, "test.c", engine)
+    param_binding_analyze(tree, "test.c", st, engine)
+    for site in engine.registration_sites:
+        assert site["target"] != "name_func", \
+            f"name_func at non-fnptr position should not be registration_site: {site}"

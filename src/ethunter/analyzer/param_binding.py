@@ -26,18 +26,20 @@ def _propagate_call_site(
 def analyze(
     tree: ts.Tree,
     filepath: str,
+    symbol_table,
     dataflow,
 ) -> list:
     """Phase 1: Bind call-site arguments to function targets. Writes dataflow
     and registration_sites. Returns empty list (no edges).
 
-    Reads: engine.func_params, engine.state.func_fp_params (from prepare)
+    Reads: engine.func_params, engine.state.func_fp_params (from prepare),
+           symbol_table.all_function_names
     Writes: dataflow.targets (param->target mappings), engine.registration_sites,
             engine.call_site_targets (per-call-site targets for param_dispatch)
     """
     func_params = dataflow.func_params
     func_fp_params = getattr(dataflow.state, 'func_fp_params', {})
-    symbol_names = set(func_params.keys())
+    symbol_names = symbol_table.all_function_names
     macros = _collect_simple_macros(tree)
 
     param_mappings: dict[str, set[str]] = {}
@@ -66,8 +68,15 @@ def analyze(
                             arg_idx = comma_count
                             target = c.text.decode('utf-8')
                             if target in symbol_names:
-                                fp_params_positions = func_fp_params.get(call_name, set())
-                                if not fp_params_positions or arg_idx in fp_params_positions:
+                                fp_params_positions = func_fp_params.get(call_name, None)
+                                is_reg = False
+                                if fp_params_positions is not None:
+                                    if arg_idx in fp_params_positions:
+                                        is_reg = True
+                                else:
+                                    if _is_registration(call_name):
+                                        is_reg = True
+                                if is_reg:
                                     dataflow.registration_sites.append({
                                         "caller": caller or '<unknown>',
                                         "callee": call_name,
@@ -118,8 +127,15 @@ def analyze(
                             if extracted and extracted in symbol_names:
                                 arg_idx = comma_count
                                 target = extracted
-                                fp_params_positions = func_fp_params.get(call_name, set())
-                                if not fp_params_positions or arg_idx in fp_params_positions:
+                                fp_params_positions = func_fp_params.get(call_name, None)
+                                is_reg = False
+                                if fp_params_positions is not None:
+                                    if arg_idx in fp_params_positions:
+                                        is_reg = True
+                                else:
+                                    if _is_registration(call_name):
+                                        is_reg = True
+                                if is_reg:
                                     dataflow.registration_sites.append({
                                         "caller": caller or '<unknown>',
                                         "callee": call_name,
@@ -140,8 +156,15 @@ def analyze(
                                 target = inner.text.decode('utf-8')
                                 if target in symbol_names:
                                     arg_idx = comma_count
-                                    fp_params_positions = func_fp_params.get(call_name, set())
-                                    if not fp_params_positions or arg_idx in fp_params_positions:
+                                    fp_params_positions = func_fp_params.get(call_name, None)
+                                    is_reg = False
+                                    if fp_params_positions is not None:
+                                        if arg_idx in fp_params_positions:
+                                            is_reg = True
+                                    else:
+                                        if _is_registration(call_name):
+                                            is_reg = True
+                                    if is_reg:
                                         dataflow.registration_sites.append({
                                             "caller": caller or '<unknown>',
                                             "callee": call_name,

@@ -32,11 +32,13 @@ from ethunter.analyzer import (
 )
 from ethunter.analyzer import (
     param_helpers,
+    param_binding,
     param_dispatch,
     callback_reg,
 )
 
 TARGET_RESOLVERS = [
+    param_binding,
     param_assign,
     direct_assign,
     initializer_assign,
@@ -82,12 +84,15 @@ def run_all_analyses(
     # Phase 1: Target Resolution (writes to dataflow via engine)
     for filepath, tree in trees.items():
         for resolver in TARGET_RESOLVERS:
-            resolver.analyze(
-                tree=tree,
-                filepath=filepath,
-                symbol_table=symbol_table,
-                dataflow=engine,
-            )
+            if resolver is param_binding:
+                resolver.analyze(tree, filepath, symbol_table, engine)
+            else:
+                resolver.analyze(
+                    tree=tree,
+                    filepath=filepath,
+                    symbol_table=symbol_table,
+                    dataflow=engine,
+                )
 
     # Phase 1b: param_assign callback detection
     for filepath, tree in trees.items():
