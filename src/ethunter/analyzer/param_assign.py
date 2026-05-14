@@ -684,6 +684,8 @@ def analyze(
                     ret_targets = dataflow.resolve_returned_field(func_name)
                     for t in ret_targets:
                         dataflow.assign(f'<gstruct:{field_path}>', t)
+                        if hasattr(dataflow, 'store'):
+                            dataflow.store.assign_struct_field(f'gstruct:{field_path}', t)
         elif fa.resolved_value is not None:
             # === Case A: RHS is identifier or cast_expression ===
             param_name = fa.resolved_value
@@ -691,6 +693,8 @@ def analyze(
             targets = param_mappings.get(param_name, set())
             for t in targets:
                 dataflow.assign(f'<struct:{field_path}>', t)
+                if hasattr(dataflow, 'store'):
+                    dataflow.store.assign_struct_field(f'gstruct:{field_path}', t)
             # Prong 2: resolve via dataflow
             df_targets = dataflow.resolve(f'{fa.enclosing_func}:{param_name}')
             if not df_targets:
@@ -700,6 +704,8 @@ def analyze(
             for t in df_targets:
                 dataflow.assign(f'<struct:{field_path}>', t)
                 dataflow.assign(f'<struct:{field_name}>', t)
+                if hasattr(dataflow, 'store'):
+                    dataflow.store.assign_struct_field(f'gstruct:{field_path}', t)
             # Prong 3: register for cross-function propagation
             if hasattr(dataflow, 'register_param_mapping') and fa.enclosing_func in func_params:
                 params = func_params[fa.enclosing_func]

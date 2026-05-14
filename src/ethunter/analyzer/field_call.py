@@ -251,115 +251,29 @@ def analyze(
                 field_path = extract_field_path(field_expr)
                 if field_path:
                     targets = set()
+                    confidence = 'medium'
+                    evidence = 'field_call resolution'
                     base_var = field_path.split('.')[0]
 
-                    # NEW: 4-tier resolver first (Tier 1-4, confidence=high if hit)
-                    found_by_resolver = False
-                    resolver_confidence = 'medium'
-                    resolver_evidence = ''
+                    # 4-tier resolver
                     if resolver is not None:
-                        targets, resolver_confidence, resolver_evidence = \
+                        targets, confidence, evidence = \
                             resolver.resolve_field_call(field_path, base_var, caller, filepath)
-                        if targets and resolver_confidence == 'high':
-                            found_by_resolver = True
-
-                    # Layer 0: type-aware key (original fallback)
-                    if not targets:
-                        struct_type = symbol_table.get_var_type(base_var)
-                        if struct_type:
-                            if hasattr(dataflow, 'store'):
-                                targets = dataflow.store.resolve_struct_field(
-                                    f'gstruct:{struct_type}.{field_path}')
-                            if not targets:
-                                targets = dataflow.resolve(f'<gstruct>:{struct_type}.{field_path}>')
-                    if not targets:
-                        # Try <gstruct:path>
-                        if hasattr(dataflow, 'store'):
-                            targets = dataflow.store.resolve_struct_field(f'gstruct:{field_path}')
+                        # Legacy fallback: entries from old param_assign.analyze() etc.
+                        # Merge with store results to cover data not yet migrated
+                        if '.' in field_path:
+                            parts = field_path.split('.')
+                            for i in range(1, len(parts)):
+                                sfx = '.'.join(parts[i:])
+                                for key, vals in dataflow.targets.items():
+                                    if key.endswith(f'.{sfx}>') and vals:
+                                        targets.update(vals)
+                            if targets and confidence in ('none', ''):
+                                confidence, evidence = 'low', 'legacy dataflow fallback'
+                    else:
+                        targets = dataflow.resolve(f'<gstruct:{field_path}>')
                         if not targets:
-                            targets = dataflow.resolve(f'<gstruct:{field_path}>')
-                    if not targets:
-                        targets = dataflow.resolve(f'<struct:{field_path}>')
-                    if not targets:
-                        targets = dataflow.resolve(f'<chain:{field_path}>')
-                    if not targets:
-                        base_name = field_path.split('.')[0]
-                        garray_targets = dataflow.resolve(f'<garray:{base_name}>')
-                        if garray_targets:
-                            targets = garray_targets
-                            for key, vals in dataflow.targets.items():
-                                if key.startswith(f'<gstruct:{base_name}.') and vals:
-                                    targets.update(vals)
-                    elif '.' in field_path:
-                        base_name = field_path.split('.')[0]
-                        garray_targets = dataflow.resolve(f'<garray:{base_name}>')
-                        if garray_targets:
-                            targets.update(garray_targets)
-                    # Suffix scan
-                    if '.' in field_path:
-                        parts = field_path.split('.')
-                        for i in range(1, len(parts)):
-                            suffix = '.'.join(parts[i:])
-                            for key, vals in dataflow.targets.items():
-                                if key.endswith(f'.{suffix}>') and vals:
-                                    targets.update(vals)
-                    if not targets and '.' in field_path:
-                        parts = field_path.split('.')
-                        alias_targets = dataflow.resolve(parts[0])
-                        if alias_targets:
-                            for resolved in alias_targets:
-                                resolved_path = resolved + '.' + '.'.join(parts[1:])
-                                targets = dataflow.resolve(f'<gstruct:{resolved_path}>')
-                                if targets:
-                                    break
-                    if not targets and '.' in field_path:
-                        parts = field_path.split('.')
-                        for i in range(1, len(parts)):
-                            suffix = '.'.join(parts[i:])
-                            targets = dataflow.resolve(f'<struct:{suffix}>')
-                            if targets:
-                                break
-                            targets = dataflow.resolve(f'<gstruct:{suffix}>')
-                            if targets:
-                                break
-                        if not targets and len(parts) > 1:
-                            for part in parts[1:-1]:
-                                targets = dataflow.resolve(f'<struct:{part}>')
-                                if targets:
-                                    break
-                                targets = dataflow.resolve(f'<gstruct:{part}>')
-                                if targets:
-                                    break
-                    if not targets:
-                        last_part = field_path.split('.')[-1]
-                        targets = dataflow.resolve(last_part)
-                        if not targets:
-                            for key, vals in dataflow.targets.items():
-                                if key.endswith(f'.{last_part}>') and vals:
-                                    targets.update(vals)
-                    if not targets and '.' in field_path:
-                        base_name = field_path.split('.')[0]
-                        enclosing_func = find_enclosing_function(node, tree.root_node)
-                        if enclosing_func:
-                            alias_key = (enclosing_func, base_name)
-                            if alias_key in dataflow.param_alias_map:
-                                global_name = dataflow.param_alias_map[alias_key]
-                                field_suffix = '.'.join(field_path.split('.')[1:])
-                                targets = dataflow.resolve(f'<gstruct:{global_name}.{field_suffix}>')
-                    if not targets and '.' in field_path:
-                        base_name = field_path.split('.')[0]
-                        if base_name in local_fp_mapping:
-                            targets = local_fp_mapping[base_name].copy()
-                    if not targets and '.' in field_path:
-                        base_name = field_path.split('.')[0]
-                        if base_name in pointer_resolutions:
-                            resolved_base = pointer_resolutions[base_name]
-                            field_suffix = '.'.join(field_path.split('.')[1:])
-                            targets = dataflow.resolve(f'<gstruct:{resolved_base}.{field_suffix}>')
-                    if not targets:
-                        targets = dataflow.resolve(f'<vtable:{field_path}>')
-                    if not targets:
-                        targets = dataflow.resolve('<vtable_init>')
+                            targets = dataflow.resolve(f'<struct:{field_path}>')
 
                     # Callback-of-callback
                     func_fp_params = getattr(dataflow.state, 'func_fp_params', None) if hasattr(dataflow, 'state') else None
@@ -404,8 +318,8 @@ def analyze(
                             type=CallType.INDIRECT,
                             indirect_kind='field_call',
                             caller_line=node.start_point[0] + 1,
-                            confidence='high' if found_by_resolver else 'medium',
-                            evidence='FieldResolver exact match' if found_by_resolver else 'field_call fallback resolution',
+                            confidence=confidence,
+                            evidence=evidence,
                         ))
             elif func_node.type == 'identifier' and func_node.text:
                 call_name = func_node.text.decode('utf-8')

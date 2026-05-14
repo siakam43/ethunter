@@ -138,9 +138,9 @@ class DataflowEngine:
             for field_key in self.param_fields[key]:
                 # Phase A: dual-write to old state and new store
                 self.state.assign(field_key, target)
-                # Strip <gstruct:...> brackets for store key
+                # Strip <...> brackets, keep gstruct: prefix
                 if field_key.startswith('<gstruct:') and field_key.endswith('>'):
-                    self.store.assign_struct_field(field_key[9:-1], target)
+                    self.store.assign_struct_field(field_key[1:-1], target)
 
         return arg_targets
 
