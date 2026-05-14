@@ -22,6 +22,7 @@ def collect_local_fp_assignments(
     tree: ts.Tree,
     dataflow: VariableState,
     symbol_names: set[str],
+    symbol_table=None,
 ) -> dict[str, set[str]]:
     """Collect local variable assignments from struct field function pointers.
 
@@ -37,7 +38,7 @@ def collect_local_fp_assignments(
             if declarator and value and value.type == 'field_expression':
                 var_name = _extract_identifier(declarator)
                 if var_name:
-                    _resolve_and_store(var_name, value, mapping, dataflow)
+                    _resolve_and_store(var_name, value, mapping, dataflow, symbol_table)
 
         # assignment_expression: local = struct.field or local = struct_ptr->field
         if node.type == 'assignment_expression':
@@ -45,7 +46,7 @@ def collect_local_fp_assignments(
             rhs = node.child_by_field_name('right')
             if lhs and rhs and lhs.type == 'identifier' and rhs.type == 'field_expression':
                 var_name = lhs.text.decode('utf-8')
-                _resolve_and_store(var_name, rhs, mapping, dataflow)
+                _resolve_and_store(var_name, rhs, mapping, dataflow, symbol_table)
 
         for child in node.children:
             _visit(child)
@@ -69,18 +70,25 @@ def collect_local_fp_assignments(
         field_expr: ts.Node,
         mapping: dict[str, set[str]],
         dataflow: VariableState,
+        symbol_table=None,
     ) -> None:
         """Build dataflow key from field expression and resolve targets."""
         field_path = extract_field_path(field_expr)
         if not field_path:
             return
-        # Try <gstruct:path> first (global struct field)
-        targets = dataflow.resolve(f'<gstruct:{field_path}>')
+        targets = set()
+        base_var = field_path.split('.')[0]
+        # Try type-aware key first if symbol_table available
+        if symbol_table:
+            struct_type = symbol_table.get_var_type(base_var)
+            if struct_type:
+                targets = dataflow.resolve(f'<gstruct>:{struct_type}.{field_path}>')
+        # Fall back to old format keys
         if not targets:
-            # Try <struct:path> (from param_assign)
+            targets = dataflow.resolve(f'<gstruct:{field_path}>')
+        if not targets:
             targets = dataflow.resolve(f'<struct:{field_path}>')
         if not targets:
-            # Try <chain:path> (complex chain)
             targets = dataflow.resolve(f'<chain:{field_path}>')
         if targets:
             if var_name not in mapping:

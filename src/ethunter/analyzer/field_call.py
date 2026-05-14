@@ -94,7 +94,7 @@ def analyze(
     pointer_resolutions = collect_pointer_resolutions(tree)
 
     # Pass 1c: collect local fp assignments for C3 fallback
-    local_fp_mapping = collect_local_fp_assignments(tree, dataflow, symbol_names)
+    local_fp_mapping = collect_local_fp_assignments(tree, dataflow, symbol_names, symbol_table)
 
     # Pass 2: detect call sites (existing logic, minus the assignment block)
     def _visit(node: ts.Node) -> None:
@@ -106,8 +106,17 @@ def analyze(
                 field_path = extract_field_path(field_expr)
                 if field_path:
                     targets = set()
-                    # Try <gstruct:path> first (from initializer_assign or this module)
-                    targets = dataflow.resolve(f'<gstruct:{field_path}>')
+                    # Layer 0: type-aware key (early return if exact match, no FP risk)
+                    base_var = field_path.split('.')[0]
+                    struct_type = symbol_table.get_var_type(base_var)
+                    if struct_type:
+                        targets = dataflow.resolve(f'<gstruct>:{struct_type}.{field_path}>')
+                        if targets:
+                            # Found via type-aware exact match — skip fallback layers
+                            pass
+                    if not targets:
+                        # Try <gstruct:path> first (from initializer_assign or this module)
+                        targets = dataflow.resolve(f'<gstruct:{field_path}>')
                     # Try <struct:path> (from param_assign)
                     if not targets:
                         targets = dataflow.resolve(f'<struct:{field_path}>')
@@ -183,7 +192,7 @@ def analyze(
                     if not targets and '.' in field_path:
                         base_name = field_path.split('.')[0]
                         enclosing_func = find_enclosing_function(node, tree.root_node)
-                        if enclosing_func and hasattr(dataflow, 'param_alias_map'):
+                        if enclosing_func:
                             alias_key = (enclosing_func, base_name)
                             if alias_key in dataflow.param_alias_map:
                                 global_name = dataflow.param_alias_map[alias_key]
@@ -209,9 +218,7 @@ def analyze(
                         targets = dataflow.resolve('<vtable_init>')
 
                     # Callback-of-callback: check if any resolved target has fnptr params
-                    func_fp_params = getattr(dataflow, 'func_fp_params', None)
-                    if func_fp_params is None and hasattr(dataflow, 'state'):
-                        func_fp_params = getattr(dataflow.state, 'func_fp_params', None)
+                    func_fp_params = getattr(dataflow.state, 'func_fp_params', None) if hasattr(dataflow, 'state') else None
 
                     if func_fp_params:
                         args = node.child_by_field_name('arguments')
