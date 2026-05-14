@@ -193,7 +193,27 @@ def analyze(
 
     _collect_call_params(tree.root_node)
 
-    # Struct member resolution (Pass 2 equivalent)
+    # Store call_site_targets on engine for param_dispatch (Phase 2)
+    dataflow.call_site_targets.update(call_site_targets)
+
+    return []  # Phase 1 returns NO edges
+
+
+def _resolve_fields(tree: ts.Tree, filepath: str, symbol_table, dataflow) -> None:
+    """Pass 2: resolve struct member assignments (field=param + return value tracking).
+    Must run AFTER all other TARGET_RESOLVERS.
+    Reconstructs param_mappings from dataflow (consistent with param_dispatch)."""
+    func_params = dataflow.func_params
+
+    # Reconstruct param_mappings from dataflow
+    param_mappings: dict[str, set[str]] = {}
+    for key, vals in dataflow.targets.items():
+        if ':' in key and not key.startswith('<'):
+            p = key.split(':')[-1]
+            if p not in param_mappings:
+                param_mappings[p] = set()
+            param_mappings[p].update(vals)
+
     for fa in collect_field_assignments(tree, unwrap_fn=getattr(dataflow, 'unwrap_cast', None)):
         if fa.enclosing_func is None:
             continue
@@ -225,8 +245,3 @@ def analyze(
                 if param_name in params:
                     param_idx = params.index(param_name)
                     dataflow.register_param_mapping(fa.enclosing_func, param_idx, field_path)
-
-    # Store call_site_targets on engine for param_dispatch (Phase 2)
-    dataflow.call_site_targets.update(call_site_targets)
-
-    return []  # Phase 1 returns NO edges

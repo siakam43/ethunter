@@ -38,8 +38,6 @@ from ethunter.analyzer import (
 )
 
 TARGET_RESOLVERS = [
-    param_binding,
-    param_assign,
     direct_assign,
     initializer_assign,
     cast_assign,
@@ -81,20 +79,25 @@ def run_all_analyses(
     for filepath, tree in trees.items():
         param_assign._register_phase(tree, filepath, symbol_table, engine)
 
-    # Phase 1: Target Resolution (writes to dataflow via engine)
+    # Phase 1 Pass 1: param_binding call params (must run first, before direct_assign)
+    for filepath, tree in trees.items():
+        param_binding.analyze(tree, filepath, symbol_table, engine)
+
+    # Phase 1 Pass 1b: TARGET_RESOLVERS (write dataflow, no edges)
     for filepath, tree in trees.items():
         for resolver in TARGET_RESOLVERS:
-            if resolver is param_binding:
-                resolver.analyze(tree, filepath, symbol_table, engine)
-            else:
-                resolver.analyze(
-                    tree=tree,
-                    filepath=filepath,
-                    symbol_table=symbol_table,
-                    dataflow=engine,
-                )
+            resolver.analyze(
+                tree=tree,
+                filepath=filepath,
+                symbol_table=symbol_table,
+                dataflow=engine,
+            )
 
-    # Phase 1b: param_assign callback detection
+    # Phase 1 Pass 2: param_binding field resolution (after all resolvers)
+    for filepath, tree in trees.items():
+        param_binding._resolve_fields(tree, filepath, symbol_table, engine)
+
+    # Phase 1b: param_assign callback detection [kept during hybrid state]
     for filepath, tree in trees.items():
         edges = param_assign.analyze(
             tree=tree,

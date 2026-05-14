@@ -1969,3 +1969,59 @@ def test_local_var_fnptr_arg_creates_callback_param_edge():
     pairs = {(e.caller, e.callee) for e in edges}
     assert ("_pqsort", "sort_asc") in pairs, \
         f"Expected _pqsort -> sort_asc via local var, got: {pairs}"
+
+
+def test_return_field_resolution_after_initializer_assign():
+    """resolve_returned_field must find gstruct keys from initializer_assign."""
+    import tree_sitter_c as tsc
+    from tree_sitter import Language, Parser
+    source = b'''
+    typedef int (*cb_t)(const void *, const void *, int, int, int, void *, void *);
+    struct cert { cb_t sec_cb; };
+    typedef struct { cb_t old_cb; } sdb_t;
+    struct ctx { struct cert *cert; };
+    static int ssl_default(const void *s, const void *c, int o, int b, int n,
+                           void *ex, void *e2) { return 1; }
+    static cb_t get_sec_cb(const struct ctx *ctx) {
+        if (!ctx || !ctx->cert) return NULL;
+        return ctx->cert->sec_cb;
+    }
+    static int debug_cb(const void *s, const void *c, int o, int b, int n,
+                        void *ex, void *e2) {
+        sdb_t *sdb = ex;
+        return sdb->old_cb(s, c, o, b, n, ex, e2);
+    }
+    void setup(void) {
+        struct cert *ret = (struct cert *)1;
+        ret->sec_cb = ssl_default;
+        static sdb_t sdb;
+        sdb.old_cb = get_sec_cb(NULL);
+        debug_cb(NULL, NULL, 0, 0, 0, &sdb, NULL);
+    }
+    '''
+    lang = Language(tsc.language())
+    parser = Parser(lang)
+    tree = parser.parse(source)
+    from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
+    from ethunter.analyzer.dataflow import DataflowEngine
+    from ethunter.analyzer.param_helpers import prepare
+    from ethunter.analyzer.param_binding import analyze as ba, _resolve_fields
+    from ethunter.analyzer import direct_assign, initializer_assign, cast_assign
+    from ethunter.analyzer import direct_call_fp, field_call, array_call
+    from ethunter.graph.model import CallType
+    st = SymbolTable()
+    for func in extract_functions(tree, "test.c"):
+        st.add_function(func)
+    engine = DataflowEngine()
+    prepare(tree, "test.c", engine)
+    # Simulate Gap B reorder: Pass 1 first, resolvers, then Pass 2
+    ba(tree, "test.c", st, engine)
+    direct_assign.analyze(tree=tree, filepath="test.c", symbol_table=st, dataflow=engine)
+    initializer_assign.analyze(tree=tree, filepath="test.c", symbol_table=st, dataflow=engine)
+    cast_assign.analyze(tree=tree, filepath="test.c", symbol_table=st, dataflow=engine)
+    _resolve_fields(tree, "test.c", st, engine)
+    # Run field_call for struct dispatch
+    edges = field_call.analyze(tree=tree, filepath="test.c", symbol_table=st, dataflow=engine)
+    pairs = {(e.caller, e.callee) for e in edges if e.type == CallType.INDIRECT}
+    assert ("debug_cb", "ssl_default") in pairs, \
+        f"Expected debug_cb -> ssl_default via return field chain, got: {pairs}"
