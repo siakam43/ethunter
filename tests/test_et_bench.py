@@ -1930,3 +1930,42 @@ def test_param_binding_suppresses_non_fnptr_args_as_registration():
     for site in engine.registration_sites:
         assert site["target"] != "name_func", \
             f"name_func at non-fnptr position should not be registration_site: {site}"
+
+
+def test_local_var_fnptr_arg_creates_callback_param_edge():
+    """Call-site passes local var as fnptr → param_dispatch should find the target."""
+    import tree_sitter_c as tsc
+    from tree_sitter import Language, Parser
+    source = b'''
+    typedef int (*cmp_t)(const void *, const void *);
+    static int sort_asc(const void *a, const void *b) { return 1; }
+    static void _pqsort(void *a, size_t n, size_t es,
+        cmp_t cmp, void *l, void *r) { cmp(a, a); }
+    static void pqsort(void *a, size_t n, size_t es,
+        cmp_t cmp, size_t l, size_t r) { _pqsort(a, n, es, cmp, NULL, NULL); }
+    void georadius(void) {
+        cmp_t sort_gp_callback = sort_asc;
+        pqsort(NULL, 10, 8, sort_gp_callback, 0, 9);
+    }
+    '''
+    lang = Language(tsc.language())
+    parser = Parser(lang)
+    tree = parser.parse(source)
+    from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
+    from ethunter.analyzer.dataflow import DataflowEngine
+    from ethunter.analyzer.param_helpers import prepare
+    from ethunter.analyzer.param_binding import analyze as param_binding_analyze
+    from ethunter.analyzer.param_dispatch import analyze as param_dispatch_analyze
+    from ethunter.analyzer import direct_assign
+    st = SymbolTable()
+    for func in extract_functions(tree, "test.c"):
+        st.add_function(func)
+    engine = DataflowEngine()
+    prepare(tree, "test.c", engine)
+    param_binding_analyze(tree, "test.c", st, engine)
+    direct_assign.analyze(tree=tree, filepath="test.c", symbol_table=st, dataflow=engine)
+    param_binding_analyze(tree, "test.c", st, engine)  # second pass: local vars now resolvable
+    edges = param_dispatch_analyze(tree, "test.c", engine)
+    pairs = {(e.caller, e.callee) for e in edges}
+    assert ("_pqsort", "sort_asc") in pairs, \
+        f"Expected _pqsort -> sort_asc via local var, got: {pairs}"

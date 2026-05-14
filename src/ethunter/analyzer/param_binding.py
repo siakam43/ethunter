@@ -111,6 +111,9 @@ def analyze(
                                     if pname not in param_mappings:
                                         param_mappings[pname] = set()
                                     param_mappings[pname].update(df_targets)
+                                    for t in df_targets:
+                                        dataflow.assign(f'{call_name}:{pname}', t)
+                                        dataflow.assign(pname, t)
                                     cs_key = (caller or '<unknown>', call_name, arg_idx)
                                     if cs_key not in call_site_targets:
                                         call_site_targets[cs_key] = set()
