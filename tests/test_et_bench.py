@@ -1650,3 +1650,35 @@ def test_symbol_table_type_tracking():
     assert st.get_struct_fields("ssl_ctx_st") == ["handler", "callback"], \
         f"unexpected fields: {st.get_struct_fields('ssl_ctx_st')}"
     assert st.get_struct_fields("nonexistent") == [], "expected empty list for unknown struct"
+
+
+def test_param_helpers_prepare_populates_engine():
+    """param_helpers.prepare() writes func_params, func_fp_params, param_usage to engine."""
+    import tree_sitter_c as tsc
+    from tree_sitter import Language, Parser
+    source = b'''
+    typedef void (*cb_t)(int x);
+    static void handler(int x) { (void)x; }
+    static void direct_caller(cb_t cb) { cb(42); }
+    static void forwarder(cb_t cb) { direct_caller(cb); }
+    static void setter(void *s, cb_t cb) { ((struct s*)s)->handler = cb; }
+    '''
+    lang = Language(tsc.language())
+    parser = Parser(lang)
+    tree = parser.parse(source)
+    from ethunter.analyzer.dataflow import DataflowEngine
+    from ethunter.analyzer.param_helpers import prepare
+    engine = DataflowEngine()
+    prepare(tree, "test.c", engine)
+    assert "direct_caller" in engine.func_params, f"func_params missing direct_caller: {engine.func_params}"
+    assert engine.func_params["direct_caller"] == ["cb"], f"unexpected params: {engine.func_params['direct_caller']}"
+    # func_fp_params still on state during migration
+    assert hasattr(engine.state, 'func_fp_params'), "state missing func_fp_params"
+    assert 0 in engine.state.func_fp_params["direct_caller"], "direct_caller pos 0 should be fnptr"
+    # param_usage still on state during migration
+    assert hasattr(engine.state, 'param_usage'), "state missing param_usage"
+    assert engine.state.param_usage[("direct_caller", 0)] == "caller", \
+        f"expected caller, got {engine.state.param_usage.get(('direct_caller', 0))}"
+    assert engine.state.param_usage[("forwarder", 0)] == "forwarder", \
+        f"expected forwarder, got {engine.state.param_usage.get(('forwarder', 0))}"
+    assert ("setter", 1) in engine.param_fields, f"setter cb param should map to field"
