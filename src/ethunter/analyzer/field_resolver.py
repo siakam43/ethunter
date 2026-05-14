@@ -141,6 +141,8 @@ class FieldResolver:
 
     def __init__(self, store, dataflow, symbol_table,
                  local_fp_mapping, pointer_resolutions):
+        self._store = store
+        self._symbol_table = symbol_table
         self._strategies = [
             TypeAwareStructLookup(store, symbol_table),
             ExactPathStructLookup(store),
@@ -164,6 +166,54 @@ class FieldResolver:
             if targets:
                 return targets
         return set()
+
+    def resolve_field_call(self, field_path: str, base_var: str,
+                           caller_func: str | None, filepath: str
+                           ) -> tuple[set[str], str, str]:
+        """Resolve a struct field function pointer call via 4-tier chain.
+
+        Returns (targets, confidence, evidence).
+        Tier 1: type-aware exact, Tier 2: exact path,
+        Tier 3: same-file suffix, Tier 4: cross-file suffix.
+        """
+        field_tail = self._store.compute_field_tail(field_path)
+        targets = set()
+
+        # === Tier 1: Type-aware exact match ===
+        struct_type = None
+        if caller_func:
+            struct_type = self._symbol_table.get_func_var_type(caller_func, base_var)
+        if not struct_type:
+            struct_type = self._symbol_table.get_var_type(base_var)
+        if struct_type:
+            targets = self._store.resolve_struct_field(f'gstruct:{struct_type}.{field_tail}')
+            if targets:
+                return targets, 'high', f'type-aware: {struct_type}.{field_tail}'
+
+        # === Tier 2: Exact path match ===
+        targets = self._store.resolve_struct_field(f'gstruct:{base_var}.{field_tail}')
+        if targets:
+            return targets, 'high', f'exact path: {base_var}.{field_tail}'
+
+        # === Tier 3: Same-file scoped suffix ===
+        suffix = f'.{field_tail}'
+        for key, vals in self._store.struct_fields.items():
+            if not key.endswith(suffix):
+                continue
+            if filepath not in self._store.struct_field_files.get(key, set()):
+                continue
+            targets.update(vals)
+        if targets:
+            return targets, 'medium', f'same-file suffix: {suffix}'
+
+        # === Tier 4: Cross-file suffix (last resort) ===
+        for key, vals in self._store.struct_fields.items():
+            if key.endswith(suffix):
+                targets.update(vals)
+        if targets:
+            return targets, 'low', f'cross-file suffix: {suffix}'
+
+        return set(), 'none', ''
 
     def resolve_with_evidence(self, field_path, base_var, caller_func=None):
         """Resolve targets and return (targets, strategy_name)."""

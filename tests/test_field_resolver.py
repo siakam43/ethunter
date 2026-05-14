@@ -113,3 +113,62 @@ class TestFieldResolver:
         resolver = FieldResolver(store, FakeDataflowEngine(store), sym, {}, {})
         targets = resolver.resolve("unknown.field", "unknown", "caller")
         assert targets == set()
+
+
+class TestResolveFieldCall:
+    """Tests for the 4-tier resolve_field_call method."""
+
+    def test_tier1_type_aware_match(self):
+        store = ScopedStore()
+        store.assign_struct_field("gstruct:my_type.cb", "handler_a")
+        sym = FakeSymbolTable({("caller", "obj"): "my_type"})
+        resolver = FieldResolver(store, FakeDataflowEngine(store), sym, {}, {})
+        targets, conf, ev = resolver.resolve_field_call(
+            "obj.cb", "obj", "caller", "fixture.c")
+        assert targets == {"handler_a"}
+        assert conf == 'high'
+        assert 'type-aware' in ev
+
+    def test_tier2_exact_path_when_no_type(self):
+        store = ScopedStore()
+        store.assign_struct_field("gstruct:handler.cb", "handler_a")
+        sym = FakeSymbolTable()  # no type
+        resolver = FieldResolver(store, FakeDataflowEngine(store), sym, {}, {})
+        targets, conf, ev = resolver.resolve_field_call(
+            "handler.cb", "handler", "caller", "fixture.c")
+        assert targets == {"handler_a"}
+        assert conf == 'high'
+        assert 'exact path' in ev
+
+    def test_tier3_same_file_suffix(self):
+        store = ScopedStore()
+        store.assign_struct_field("gstruct:handler.cb", "handler_a", "fixture.c")
+        store.assign_struct_field("gstruct:other_type.cb", "handler_b", "other.c")
+        sym = FakeSymbolTable()
+        resolver = FieldResolver(store, FakeDataflowEngine(store), sym, {}, {})
+        targets, conf, ev = resolver.resolve_field_call(
+            "obj.cb", "obj", "caller", "fixture.c")
+        assert targets == {"handler_a"}
+        assert "handler_b" not in targets
+        assert conf == 'medium'
+        assert 'same-file' in ev
+
+    def test_tier4_cross_file_suffix(self):
+        store = ScopedStore()
+        store.assign_struct_field("gstruct:handler.cb", "handler_a", "other.c")
+        sym = FakeSymbolTable()
+        resolver = FieldResolver(store, FakeDataflowEngine(store), sym, {}, {})
+        targets, conf, ev = resolver.resolve_field_call(
+            "obj.cb", "obj", "caller", "fixture.c")
+        assert targets == {"handler_a"}
+        assert conf == 'low'
+        assert 'cross-file' in ev
+
+    def test_returns_empty_when_no_match(self):
+        store = ScopedStore()
+        sym = FakeSymbolTable()
+        resolver = FieldResolver(store, FakeDataflowEngine(store), sym, {}, {})
+        targets, conf, ev = resolver.resolve_field_call(
+            "x.y", "x", "func", "f.c")
+        assert targets == set()
+        assert conf == 'none'

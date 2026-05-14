@@ -253,11 +253,14 @@ def analyze(
                     targets = set()
                     base_var = field_path.split('.')[0]
 
-                    # NEW: try FieldResolver first (exact key lookups, no FP risk)
+                    # NEW: 4-tier resolver first (Tier 1-4, confidence=high if hit)
                     found_by_resolver = False
+                    resolver_confidence = 'medium'
+                    resolver_evidence = ''
                     if resolver is not None:
-                        targets = resolver.resolve(field_path, base_var, caller)
-                        if targets:
+                        targets, resolver_confidence, resolver_evidence = \
+                            resolver.resolve_field_call(field_path, base_var, caller, filepath)
+                        if targets and resolver_confidence == 'high':
                             found_by_resolver = True
 
                     # Layer 0: type-aware key (original fallback)
