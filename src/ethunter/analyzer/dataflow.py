@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from ethunter.analyzer.scoped_store import ScopedStore
 
 
 @dataclass
@@ -39,6 +40,9 @@ class DataflowEngine:
     - CastResolver: nested cast expression unwrapping
     """
     state: VariableState = field(default_factory=VariableState)
+
+    # Scoped dataflow store (new — Phase A migration)
+    store: ScopedStore = field(default_factory=ScopedStore)
 
     # Parameter propagation: (func_name, param_position) -> {field_path}
     param_fields: dict[tuple[str, int], set[str]] = field(default_factory=dict)
