@@ -1682,3 +1682,30 @@ def test_param_helpers_prepare_populates_engine():
     assert engine.state.param_usage[("forwarder", 0)] == "forwarder", \
         f"expected forwarder, got {engine.state.param_usage.get(('forwarder', 0))}"
     assert ("setter", 1) in engine.param_fields, f"setter cb param should map to field"
+
+
+def test_param_binding_writes_dataflow_no_edges():
+    """param_binding writes dataflow + registration_sites, returns NO edges."""
+    import tree_sitter_c as tsc
+    from tree_sitter import Language, Parser
+    source = b'''
+    typedef void (*fn_t)(void);
+    static void my_handler(void) {}
+    static void reg(void *s, fn_t f) { ((struct s*)s)->handler = f; }
+    void setup(void) { struct s o; reg(&o, my_handler); }
+    '''
+    lang = Language(tsc.language())
+    parser = Parser(lang)
+    tree = parser.parse(source)
+    from ethunter.analyzer.dataflow import DataflowEngine
+    from ethunter.analyzer.param_helpers import prepare
+    from ethunter.analyzer.param_binding import analyze as param_binding_analyze
+    engine = DataflowEngine()
+    prepare(tree, "test.c", engine)
+    edges = param_binding_analyze(tree, "test.c", engine)
+    assert len(edges) == 0, f"param_binding should return 0 edges, got {len(edges)}"
+    assert len(engine.registration_sites) > 0, "should have registration_sites"
+    site = engine.registration_sites[0]
+    assert site["caller"] == "setup", f"unexpected caller: {site}"
+    assert site["callee"] == "reg", f"unexpected callee: {site}"
+    assert site["target"] == "my_handler", f"unexpected target: {site}"
