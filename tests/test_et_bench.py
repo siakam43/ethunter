@@ -1820,3 +1820,61 @@ def test_callback_reg_suppress_when_covered_by_field_call():
     edges = callback_reg_analyze(tree, "test.c", engine)
     cr_targets = {e.callee for e in edges}
     assert "my_fn" not in cr_targets, f"my_fn in covered_callees, should be suppressed: {cr_targets}"
+
+
+def test_scoped_key_isolates_same_name_vars():
+    """fp in two different functions should not collide in dataflow."""
+    import tree_sitter_c as tsc
+    from tree_sitter import Language, Parser
+    source = b'''
+    typedef void (*fn_t)(void);
+    static void h_a(void) {}
+    static void h_b(void) {}
+    void setup_a(void) { fn_t fp = h_a; fp(); }
+    void setup_b(void) { fn_t fp = h_b; fp(); }
+    '''
+    lang = Language(tsc.language())
+    parser = Parser(lang)
+    tree = parser.parse(source)
+    from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
+    from ethunter.analyzer.dataflow import VariableState
+    from ethunter.analyzer.orchestrator import run_all_analyses
+    st = SymbolTable()
+    for func in extract_functions(tree, "test.c"):
+        st.add_function(func)
+    df = VariableState()
+    graph = run_all_analyses({"test.c": tree}, st, df)
+    pairs = {(e.caller, e.callee) for e in graph.edges if e.type.value == 'indirect'}
+    assert ("setup_a", "h_a") in pairs, f"Expected setup_a->h_a in {pairs}"
+    assert ("setup_a", "h_b") not in pairs, f"setup_a should NOT call h_b: {pairs}"
+
+
+def test_type_aware_key_isolates_different_struct_types():
+    """Two struct types with same field name: targets must not mix."""
+    import tree_sitter_c as tsc
+    from tree_sitter import Language, Parser
+    source = b'''
+    typedef void (*fn_t)(void);
+    static void h_a(void) {}
+    static void h_b(void) {}
+    struct type_a { const char *n; fn_t handler; };
+    struct type_b { int id; fn_t handler; };
+    static struct type_a o1 = {"a", h_a};
+    static struct type_b o2 = {42, h_b};
+    void use_a(void) { if (o1.handler) o1.handler(); }
+    void use_b(void) { if (o2.handler) o2.handler(); }
+    '''
+    lang = Language(tsc.language())
+    parser = Parser(lang)
+    tree = parser.parse(source)
+    from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
+    from ethunter.analyzer.dataflow import VariableState
+    from ethunter.analyzer.orchestrator import run_all_analyses
+    st = SymbolTable()
+    for func in extract_functions(tree, "test.c"):
+        st.add_function(func)
+    df = VariableState()
+    graph = run_all_analyses({"test.c": tree}, st, df)
+    fc = {(e.caller, e.callee) for e in graph.edges if e.indirect_kind == "field_call"}
+    assert ("use_a", "h_b") not in fc, f"type_a.handler should NOT resolve to h_b: {fc}"
+    assert ("use_b", "h_a") not in fc, f"type_b.handler should NOT resolve to h_a: {fc}"

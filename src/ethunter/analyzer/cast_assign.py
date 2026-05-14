@@ -11,7 +11,7 @@ import tree_sitter as ts
 
 from ethunter.analyzer.dataflow import VariableState
 from ethunter.analyzer.symbol_table import SymbolTable
-from ethunter.analyzer.helpers import extract_identifier_from_declarator
+from ethunter.analyzer.helpers import extract_identifier_from_declarator, find_enclosing_function
 
 
 def analyze(
@@ -23,6 +23,11 @@ def analyze(
     """Track function pointer assignments via cast expressions."""
     edges: list = []
     symbol_names = symbol_table.all_function_names
+
+    def _assign(var_name: str, target: str, node: ts.Node) -> None:
+        enclosing = find_enclosing_function(node, tree.root_node) or '<global>'
+        dataflow.assign(f'<var>:{enclosing}:{var_name}', target)
+        dataflow.assign(var_name, target)  # backward compat during migration
 
     def _extract_cast_target(node: ts.Node) -> str | None:
         """Extract function name from inside a cast_expression."""
@@ -43,7 +48,7 @@ def analyze(
                 if target:
                     var_name = extract_identifier_from_declarator(declarator)
                     if var_name:
-                        dataflow.assign(var_name, target)
+                        _assign(var_name, target, node)
 
         # assignment_expression with cast: fp = (type)func_name
         if node.type == 'assignment_expression':
@@ -53,7 +58,7 @@ def analyze(
                 target = _extract_cast_target(rhs)
                 if target:
                     var_name = lhs.text.decode('utf-8')
-                    dataflow.assign(var_name, target)
+                    _assign(var_name, target, node)
 
         for child in node.children:
             _visit(child)

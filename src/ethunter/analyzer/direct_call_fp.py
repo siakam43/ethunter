@@ -28,23 +28,28 @@ def analyze(
     symbol_names = symbol_table.all_function_names
     local_mapping = collect_local_fp_assignments(tree, dataflow, symbol_names)
 
-    def _get_targets(var_name: str) -> set[str]:
+    def _get_targets(var_name: str, caller_func: str | None = None) -> set[str]:
         """Resolve function targets for a variable name.
 
         Checks in order:
-        1. Direct dataflow assignment (e.g., fp = func)
-        2. Local variable from struct field
+        1. Scoped key <var>:<caller_func>:<var_name>
+        2. Bare variable name (fallback)
+        3. Local variable from struct field
         """
-        targets = dataflow.resolve(var_name)
+        targets = set()
+        if caller_func:
+            targets = dataflow.resolve(f'<var>:{caller_func}:{var_name}')
+        if not targets:
+            targets = dataflow.resolve(var_name)
         if not targets:
             targets = local_mapping.get(var_name, set()).copy()
         return targets
 
     def _add_edges(func_name: str, call_node: ts.Node) -> None:
         """Add call edges for resolved targets."""
-        targets = _get_targets(func_name)
+        caller = find_enclosing_function(call_node, tree.root_node)
+        targets = _get_targets(func_name, caller)
         if targets:
-            caller = find_enclosing_function(call_node, tree.root_node)
             for target in targets:
                 edges.append(CallEdge(
                     caller=caller or '<unknown>',

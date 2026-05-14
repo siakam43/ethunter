@@ -12,7 +12,7 @@ import tree_sitter as ts
 
 from ethunter.analyzer.dataflow import VariableState
 from ethunter.analyzer.symbol_table import SymbolTable
-from ethunter.analyzer.helpers import extract_identifier_from_declarator
+from ethunter.analyzer.helpers import extract_identifier_from_declarator, find_enclosing_function
 
 
 def analyze(
@@ -24,6 +24,11 @@ def analyze(
     """Track direct function pointer assignments."""
     edges: list = []
     symbol_names = symbol_table.all_function_names
+
+    def _assign(var_name: str, target: str, node: ts.Node) -> None:
+        enclosing = find_enclosing_function(node, tree.root_node) or '<global>'
+        dataflow.assign(f'<var>:{enclosing}:{var_name}', target)
+        dataflow.assign(var_name, target)  # backward compat during migration
 
     def _visit(node: ts.Node) -> None:
         # assignment_expression: fp = func_name
@@ -37,13 +42,13 @@ def analyze(
                 if rhs.type == 'identifier' and rhs.text:
                     target = rhs.text.decode('utf-8')
                     if target in symbol_names:
-                        dataflow.assign(var_name, target)
+                        _assign(var_name, target, node)
                     else:
                         # Alias chain: fp2 = fp1
                         targets = dataflow.resolve(target)
                         if targets:
                             for t in targets:
-                                dataflow.assign(var_name, t)
+                                _assign(var_name, t, node)
 
         # init_declarator: void (*fp)(void) = func_name or *var = &target
         if node.type == 'init_declarator':
@@ -60,25 +65,25 @@ def analyze(
                 if target_node.type == 'identifier' and target_node.text:
                     target = target_node.text.decode('utf-8')
                     if target in symbol_names:
-                        dataflow.assign(var_name, target)
+                        _assign(var_name, target, node)
                     else:
                         targets = dataflow.resolve(target)
                         if targets:
                             for t in targets:
-                                dataflow.assign(var_name, t)
+                                _assign(var_name, t, node)
                         else:
                             # Track struct pointer alias (e.g., Curl_ssl -> Curl_ssl_openssl)
-                            dataflow.assign(var_name, target)
+                            _assign(var_name, target, node)
                 return
             if value.type == 'identifier' and value.text:
                 target = value.text.decode('utf-8')
                 if target in symbol_names:
-                    dataflow.assign(var_name, target)
+                    _assign(var_name, target, node)
                 else:
                     targets = dataflow.resolve(target)
                     if targets:
                         for t in targets:
-                            dataflow.assign(var_name, t)
+                            _assign(var_name, t, node)
 
         for child in node.children:
             _visit(child)
@@ -98,9 +103,10 @@ def analyze(
                 if target not in symbol_names:
                     targets = dataflow.resolve(target)
                     if targets:
-                        dataflow.targets[var_name] = set()
+                        enclosing = find_enclosing_function(node, tree.root_node) or '<global>'
+                        dataflow.targets[f'<var>:{enclosing}:{var_name}'] = set()
                         for t in targets:
-                            dataflow.assign(var_name, t)
+                            _assign(var_name, t, node)
             # Re-check init_declarators with deferred resolution
             if node.type == 'init_declarator':
                 declarator = node.child_by_field_name('declarator')
@@ -111,9 +117,10 @@ def analyze(
                     target = value.text.decode('utf-8')
                     if var_name and target not in symbol_names:
                         targets = dataflow.resolve(target)
-                        if targets and var_name not in dataflow.targets:
+                        enclosing = find_enclosing_function(node, tree.root_node) or '<global>'
+                        if targets and f'<var>:{enclosing}:{var_name}' not in dataflow.targets:
                             for t in targets:
-                                dataflow.assign(var_name, t)
+                                _assign(var_name, t, node)
         for child in node.children:
             _visit_pass2(child)
 
