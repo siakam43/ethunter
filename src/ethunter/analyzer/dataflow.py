@@ -124,7 +124,7 @@ class DataflowEngine:
         if key not in self.param_fields:
             return set()
 
-        # Step 1: Try dataflow resolve (for variables that were assigned)
+        # Step 1: Try scoped store resolve (for variables that were assigned)
         arg_targets = self.state.resolve(arg_name)
 
         # Step 2: If arg_name itself is a known function name, add it directly
@@ -136,7 +136,11 @@ class DataflowEngine:
 
         for target in arg_targets:
             for field_key in self.param_fields[key]:
+                # Phase A: dual-write to old state and new store
                 self.state.assign(field_key, target)
+                # Strip <gstruct:...> brackets for store key
+                if field_key.startswith('<gstruct:') and field_key.endswith('>'):
+                    self.store.assign_struct_field(field_key[9:-1], target)
 
         return arg_targets
 
@@ -163,17 +167,19 @@ class DataflowEngine:
 
         results = set()
         for field_path in self.ret_fields[func_name]:
-            # Exact match (may find values set by later assignments in same scope)
-            targets = self.state.resolve(f"<gstruct:{field_path}>")
+            # Exact match via store first, then old state fallback
+            results.update(self.store.resolve_struct_field(f'gstruct:{field_path}'))
+            targets = self.state.resolve(f'<gstruct:{field_path}>')
             results.update(targets)
 
-            # Suffix fallback: also check other variable names for the same field
-            # (e.g., ret.sec_cb vs ctx.cert.sec_cb). Needed when getter runs
-            # before setter in the same function.
+            # Suffix fallback via store first, then old state
             parts = field_path.split('.')
             for i in range(1, len(parts)):
                 suffix = '.'.join(parts[i:])
                 before = len(results)
+                for key, vals in self.store.struct_fields.items():
+                    if key.endswith(f'.{suffix}') and vals:
+                        results.update(vals)
                 for key, vals in self.state.targets.items():
                     if key.endswith(f'.{suffix}>') and vals:
                         results.update(vals)

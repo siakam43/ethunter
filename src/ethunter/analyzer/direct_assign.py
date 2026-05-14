@@ -28,7 +28,7 @@ def analyze(
     def _assign(var_name: str, target: str, node: ts.Node) -> None:
         enclosing = find_enclosing_function(node, tree.root_node) or '<global>'
         dataflow.assign(f'<var>:{enclosing}:{var_name}', target)
-        dataflow.assign(var_name, target)  # backward compat during migration
+        dataflow.assign(var_name, target)  # backward compat
         if hasattr(dataflow, 'store'):
             dataflow.store.assign_func_var(enclosing, var_name, target)
 

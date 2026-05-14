@@ -26,9 +26,8 @@ def analyze(
     symbol_names = symbol_table.all_function_names
 
     def _assign_gstruct(field_path: str, target: str) -> None:
-        """Write gstruct dataflow key in both old and type-aware formats."""
-        dataflow.assign(f'<gstruct:{field_path}>', target)  # always old format
-        # NEW: dual-write to ScopedStore (hasattr guard for VariableState compat)
+        """Write gstruct dataflow key in both formats."""
+        dataflow.assign(f'<gstruct:{field_path}>', target)  # backward compat
         if hasattr(dataflow, 'store'):
             dataflow.store.assign_struct_field(f'gstruct:{field_path}', target)
         base_var = field_path.split('.')[0]

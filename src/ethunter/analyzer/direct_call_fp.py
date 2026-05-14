@@ -40,6 +40,9 @@ def analyze(
         if caller_func:
             if hasattr(dataflow, 'store'):
                 targets = dataflow.store.resolve_func_var(caller_func, var_name)
+                if not targets:
+                    # Global-scope fallback (variables assigned outside any function)
+                    targets = dataflow.store.resolve_func_var('<global>', var_name)
             if not targets:
                 targets = dataflow.resolve(f'<var>:{caller_func}:{var_name}')
         if not targets:
