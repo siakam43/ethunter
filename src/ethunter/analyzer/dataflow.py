@@ -53,6 +53,24 @@ class DataflowEngine:
     # Alias tracking: reserved for future use
     aliases: dict[str, str] = field(default_factory=dict)
 
+    # Parameter alias map: (enclosing_func, local_var) -> global_struct_name
+    param_alias_map: dict[tuple[str, str], str] = field(default_factory=dict)
+
+    # Cross-file function metadata (populated by param_helpers.prepare)
+    func_params: dict[str, list[str]] = field(default_factory=dict)
+
+    # Phase 3 registration tracking
+    registration_sites: list = field(default_factory=list)
+    covered_callees: set[str] = field(default_factory=set)
+
+    # Per-call-site targets (Phase 1 → Phase 2 handoff)
+    call_site_targets: dict = field(default_factory=dict)
+
+    # NOTE: func_fp_params and param_usage remain on dataflow.state (VariableState)
+    # during migration. They will be promoted to engine level in Task 2 when
+    # param_helpers.prepare() takes ownership and old hasattr fallback chains
+    # in param_assign are removed.
+
     # === Backward compatible interface ===
 
     def assign(self, var_name: str, target: str) -> None:

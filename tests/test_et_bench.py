@@ -1623,3 +1623,30 @@ void setup(void) { register_handler(my_cb); }
     cr = {e.callee for e in graph.edges if e.indirect_kind == "callback_reg"}
     assert "my_cb" not in cr, f"register_handler forwards, should not emit: {cr}"
 
+
+def test_engine_has_new_fields():
+    """DataflowEngine has func_params, registration_sites, covered_callees, etc."""
+    from ethunter.analyzer.dataflow import DataflowEngine
+    engine = DataflowEngine()
+    assert hasattr(engine, 'func_params'), "engine missing func_params"
+    assert engine.func_params == {}, f"expected empty dict, got {engine.func_params}"
+    assert hasattr(engine, 'registration_sites'), "engine missing registration_sites"
+    assert engine.registration_sites == [], f"expected empty list, got {engine.registration_sites}"
+    assert hasattr(engine, 'covered_callees'), "engine missing covered_callees"
+    assert engine.covered_callees == set(), f"expected empty set, got {engine.covered_callees}"
+    assert hasattr(engine, 'call_site_targets'), "engine missing call_site_targets"
+    assert engine.call_site_targets == {}, f"expected empty dict, got {engine.call_site_targets}"
+    assert hasattr(engine, 'param_alias_map'), "engine missing param_alias_map"
+
+
+def test_symbol_table_type_tracking():
+    """SymbolTable supports record_var_type/get_var_type and record_struct_fields/get_struct_fields."""
+    from ethunter.analyzer.symbol_table import SymbolTable
+    st = SymbolTable()
+    st.record_var_type("ctx", "ssl_ctx_st")
+    assert st.get_var_type("ctx") == "ssl_ctx_st", f"expected ssl_ctx_st, got {st.get_var_type('ctx')}"
+    assert st.get_var_type("unknown") is None, "expected None for unknown var"
+    st.record_struct_fields("ssl_ctx_st", ["handler", "callback"])
+    assert st.get_struct_fields("ssl_ctx_st") == ["handler", "callback"], \
+        f"unexpected fields: {st.get_struct_fields('ssl_ctx_st')}"
+    assert st.get_struct_fields("nonexistent") == [], "expected empty list for unknown struct"
