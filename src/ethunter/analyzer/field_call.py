@@ -262,6 +262,11 @@ def analyze(
                         # Legacy fallback: entries from old param_assign.analyze() etc.
                         # Merge with store results to cover data not yet migrated
                         if '.' in field_path:
+                            # garray: lookup for array-of-structs with positional init
+                            garray_targets = dataflow.resolve(f'<garray:{base_var}>')
+                            if garray_targets:
+                                targets.update(garray_targets)
+                            # suffix scan for <gstruct:var.field> and <struct:field>
                             parts = field_path.split('.')
                             for i in range(1, len(parts)):
                                 sfx = '.'.join(parts[i:])
