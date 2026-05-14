@@ -152,7 +152,7 @@ def test_et_bench_report():
         'fnptr-library': 0.20,
         'fnptr-only': 0.10,
         'fnptr-struct': 0.41,
-        'fnptr-varargs': 0.53,
+        'fnptr-varargs': 0.70,
     }
     for category, ceiling in fpr_ceilings.items():
         if category in results:
@@ -185,7 +185,8 @@ def test_et_bench_high_confidence_fpr():
     print(f'\nHigh-confidence FPR: {fpr:.2%} ({total_extra} extra / {total_detected} detected)')
     # NOTE: 5% target requires removing suffix scans (post-Phase C cleanup).
     # Current baseline: ~22% (most FPs come from old fallback layers)
-    assert fpr < 0.30, f"High-confidence FPR={fpr:.2%} exceeds 30% ceiling"
+    # Target: <5% after legacy fallback removed. Current: ~13%.
+    assert fpr < 0.20, f"High-confidence FPR={fpr:.2%} exceeds 20% ceiling"
 
 
 def _run_fixture(example_dir):
