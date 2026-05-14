@@ -77,7 +77,7 @@ def run_all_analyses(
 
     # Phase 1a (cont'd): param_assign pre-scan for cross-file state
     for filepath, tree in trees.items():
-        param_assign._register_phase(tree, filepath, symbol_table, engine)
+        param_assign.register_phase(tree, filepath, symbol_table, engine)
 
     # Phase 1a*: field_call Pass 1 — ALL files (collect struct field assignments)
     for filepath, tree in trees.items():
@@ -101,7 +101,8 @@ def run_all_analyses(
     for filepath, tree in trees.items():
         param_binding._resolve_fields(tree, filepath, symbol_table, engine)
 
-    # Phase 1b: param_assign callback detection [kept during hybrid state]
+    # Phase 1c (deprecated): param_assign.analyze() — legacy edges, replaced by
+    # param_dispatch + callback_reg but kept for backward compat while migration completes.
     for filepath, tree in trees.items():
         edges = param_assign.analyze(
             tree=tree,

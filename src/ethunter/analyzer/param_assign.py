@@ -398,6 +398,12 @@ def _classify_param_usage(node, func_fp_params, func_params, param_usage):
     _scan(node)
 
 
+def register_phase(tree: ts.Tree, filepath: str, symbol_table: SymbolTable,
+                   dataflow) -> None:
+    """Phase 1a: pre-scan for param→field registrations. No edges."""
+    _register_phase(tree, filepath, symbol_table, dataflow)
+
+
 def _propagate_call_site(
     call_name: str, arg_idx: int, target: str,
     dataflow, symbol_names: set[str],
