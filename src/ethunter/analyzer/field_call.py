@@ -23,12 +23,11 @@ from ethunter.analyzer.helpers import (
     collect_pointer_resolutions,
 )
 from ethunter.analyzer.local_fp_tracker import collect_local_fp_assignments
+from ethunter.analyzer.field_resolver import FieldResolver
 
 
 def _collect_macros(tree: ts.Tree) -> dict[str, str]:
-    """Collect preproc_def/preproc_function_def macros and their bodies.
-    Returns mapping: macro_name -> macro_body_text
-    """
+    """Collect preproc_def/preproc_function_def macros and their bodies."""
     macros: dict[str, str] = {}
 
     def _scan(n: ts.Node) -> None:
@@ -50,13 +49,34 @@ def _collect_macros(tree: ts.Tree) -> dict[str, str]:
 
 
 def _extract_field_path_from_macro_body(body: str) -> str | None:
-    """Extract struct_var.field pattern from macro body text.
-    e.g., 'streamer_hooks.read_tree(IB, DATA_IN)' -> 'streamer_hooks.read_tree'
-    """
+    """Extract struct_var.field pattern from macro body text."""
     match = re.search(r'(\w+)\s*(?:\.|->)\s*(\w+)', body)
     if match:
         return f'{match.group(1)}.{match.group(2)}'
     return None
+
+
+def collect(tree: ts.Tree, filepath: str, dataflow, symbol_table,
+            symbol_names: set[str]) -> None:
+    """Phase 1a*: collect field assignments, write struct_fields entries.
+
+    Runs across ALL files before Phase 2 so cross-file assignments are visible.
+    """
+    for fa in collect_field_assignments(tree, unwrap_fn=getattr(dataflow, 'unwrap_cast', None)):
+        if fa.resolved_value is not None and fa.resolved_value in symbol_names:
+            # Write old-format key for backward compat (used by suffix scans)
+            dataflow.assign(f'<gstruct:{fa.field_path}>', fa.resolved_value)
+            # Write to ScopedStore with field_tail convention
+            if hasattr(dataflow, 'store'):
+                base_var = fa.field_path.split('.')[0]
+                field_tail = dataflow.store.compute_field_tail(fa.field_path)
+                dataflow.store.assign_struct_field(f'gstruct:{base_var}.{field_tail}',
+                                                   fa.resolved_value)
+                # If type is known, also write type-aware key
+                struct_type = symbol_table.get_func_var_type(fa.enclosing_func, base_var)
+                if struct_type:
+                    dataflow.store.assign_struct_field(f'gstruct:{struct_type}.{field_tail}',
+                                                       fa.resolved_value)
 
 
 def analyze(
@@ -71,12 +91,10 @@ def analyze(
     macro_map = _collect_macros(tree)
 
     def _extract_field_expression(node: ts.Node | None) -> ts.Node | None:
-        """Extract a field_expression, unwrapping parentheses and pointer expressions."""
         if not node:
             return None
         if node.type == 'field_expression':
             return node
-        # (*ptr->field) → parenthesized_expression → pointer_expression → field_expression
         if node.type == 'parenthesized_expression':
             for c in node.children:
                 if c.type == 'pointer_expression':
@@ -85,23 +103,32 @@ def analyze(
                             return cc
         return node if node.type == 'field_expression' else None
 
-    # Pass 1: collect all field assignments across the entire file
+    # Pass 1: collect field assignments (still needed for macro-expanded calls)
+    # Main collection moved to collect() but keep here for direct-test compat
     for fa in collect_field_assignments(tree, unwrap_fn=getattr(dataflow, 'unwrap_cast', None)):
         if fa.resolved_value is not None and fa.resolved_value in symbol_names:
-            dataflow.assign(f'<gstruct:{fa.field_path}>', fa.resolved_value)  # backward compat
+            dataflow.assign(f'<gstruct:{fa.field_path}>', fa.resolved_value)
             if hasattr(dataflow, 'store'):
                 base_var = fa.field_path.split('.')[0]
                 field_tail = dataflow.store.compute_field_tail(fa.field_path)
                 dataflow.store.assign_struct_field(f'gstruct:{base_var}.{field_tail}',
                                                    fa.resolved_value)
 
-    # Pass 1b: collect pointer resolutions (local var -> global array/struct name)
     pointer_resolutions = collect_pointer_resolutions(tree)
-
-    # Pass 1c: collect local fp assignments for C3 fallback
     local_fp_mapping = collect_local_fp_assignments(tree, dataflow, symbol_names, symbol_table)
 
-    # Pass 2: detect call sites (existing logic, minus the assignment block)
+    # Build FieldResolver if store is available
+    resolver = None
+    if hasattr(dataflow, 'store'):
+        resolver = FieldResolver(
+            store=dataflow.store,
+            dataflow=dataflow,
+            symbol_table=symbol_table,
+            local_fp_mapping=local_fp_mapping,
+            pointer_resolutions=pointer_resolutions,
+        )
+
+    # Pass 2: detect call sites (original logic + FieldResolver pre-check)
     def _visit(node: ts.Node) -> None:
         if node.type == 'call_expression':
             func_node = node.child_by_field_name('function') or node.children[0]
@@ -111,48 +138,45 @@ def analyze(
                 field_path = extract_field_path(field_expr)
                 if field_path:
                     targets = set()
-                    # Layer 0: type-aware key (early return if exact match, no FP risk)
                     base_var = field_path.split('.')[0]
-                    struct_type = symbol_table.get_var_type(base_var)
-                    if struct_type:
-                        # Phase A: try ScopedStore first
-                        if hasattr(dataflow, 'store'):
-                            targets = dataflow.store.resolve_struct_field(
-                                f'gstruct:{struct_type}.{field_path}')
-                        if not targets:
-                            targets = dataflow.resolve(f'<gstruct>:{struct_type}.{field_path}>')
-                        if targets:
-                            # Found via type-aware exact match — skip fallback layers
-                            pass
+
+                    # NEW: try FieldResolver first (exact key lookups, no FP risk)
+                    if resolver is not None:
+                        targets = resolver.resolve(field_path, base_var, caller)
+
+                    # Layer 0: type-aware key (original fallback)
                     if not targets:
-                        # Try <gstruct:path> first (from initializer_assign or this module)
+                        struct_type = symbol_table.get_var_type(base_var)
+                        if struct_type:
+                            if hasattr(dataflow, 'store'):
+                                targets = dataflow.store.resolve_struct_field(
+                                    f'gstruct:{struct_type}.{field_path}')
+                            if not targets:
+                                targets = dataflow.resolve(f'<gstruct>:{struct_type}.{field_path}>')
+                    if not targets:
+                        # Try <gstruct:path>
                         if hasattr(dataflow, 'store'):
                             targets = dataflow.store.resolve_struct_field(f'gstruct:{field_path}')
                         if not targets:
                             targets = dataflow.resolve(f'<gstruct:{field_path}>')
-                    # Try <struct:path> (from param_assign)
                     if not targets:
                         targets = dataflow.resolve(f'<struct:{field_path}>')
-                    # Try <chain:path> for complex chain
                     if not targets:
                         targets = dataflow.resolve(f'<chain:{field_path}>')
-                    # Fallback: global array initializer (e.g., <garray:global_hooks>)
                     if not targets:
                         base_name = field_path.split('.')[0]
                         garray_targets = dataflow.resolve(f'<garray:{base_name}>')
                         if garray_targets:
                             targets = garray_targets
-                            # Also merge struct-specific targets for the same base
                             for key, vals in dataflow.targets.items():
                                 if key.startswith(f'<gstruct:{base_name}.') and vals:
                                     targets.update(vals)
                     elif '.' in field_path:
-                        # Also merge <garray:base> targets when field-name match exists
                         base_name = field_path.split('.')[0]
                         garray_targets = dataflow.resolve(f'<garray:{base_name}>')
                         if garray_targets:
                             targets.update(garray_targets)
-                    # Always merge suffix-matched targets (even when <gstruct:> had partial hits)
+                    # Suffix scan
                     if '.' in field_path:
                         parts = field_path.split('.')
                         for i in range(1, len(parts)):
@@ -160,7 +184,6 @@ def analyze(
                             for key, vals in dataflow.targets.items():
                                 if key.endswith(f'.{suffix}>') and vals:
                                     targets.update(vals)
-                    # Fallback: resolve struct alias (e.g., Curl_ssl -> Curl_ssl_openssl)
                     if not targets and '.' in field_path:
                         parts = field_path.split('.')
                         alias_targets = dataflow.resolve(parts[0])
@@ -170,10 +193,8 @@ def analyze(
                                 targets = dataflow.resolve(f'<gstruct:{resolved_path}>')
                                 if targets:
                                     break
-                    # Fallback: suffix match on <struct:*.field> (e.g., input_buffer.hooks.allocate -> <struct:hooks.allocate> or <struct:hooks>)
                     if not targets and '.' in field_path:
                         parts = field_path.split('.')
-                        # Try progressively shorter suffixes
                         for i in range(1, len(parts)):
                             suffix = '.'.join(parts[i:])
                             targets = dataflow.resolve(f'<struct:{suffix}>')
@@ -182,7 +203,6 @@ def analyze(
                             targets = dataflow.resolve(f'<gstruct:{suffix}>')
                             if targets:
                                 break
-                        # If no match yet, try middle components as struct keys
                         if not targets and len(parts) > 1:
                             for part in parts[1:-1]:
                                 targets = dataflow.resolve(f'<struct:{part}>')
@@ -191,17 +211,13 @@ def analyze(
                                 targets = dataflow.resolve(f'<gstruct:{part}>')
                                 if targets:
                                     break
-                    # Fallback: try last component alone
                     if not targets:
                         last_part = field_path.split('.')[-1]
-                        # Try <struct:field> and <gstruct:var.field> for any var
                         targets = dataflow.resolve(last_part)
                         if not targets:
-                            # Scan for keys ending with .{last_part}> in dataflow
                             for key, vals in dataflow.targets.items():
                                 if key.endswith(f'.{last_part}>') and vals:
                                     targets.update(vals)
-                    # Fallback: parameter-to-global-array binding (Fix B)
                     if not targets and '.' in field_path:
                         base_name = field_path.split('.')[0]
                         enclosing_func = find_enclosing_function(node, tree.root_node)
@@ -211,28 +227,23 @@ def analyze(
                                 global_name = dataflow.param_alias_map[alias_key]
                                 field_suffix = '.'.join(field_path.split('.')[1:])
                                 targets = dataflow.resolve(f'<gstruct:{global_name}.{field_suffix}>')
-                    # Fallback: local_fp_tracker mapping (Fix C3)
                     if not targets and '.' in field_path:
                         base_name = field_path.split('.')[0]
                         if base_name in local_fp_mapping:
                             targets = local_fp_mapping[base_name].copy()
-                    # Fallback: pointer alias resolution (Fix A)
                     if not targets and '.' in field_path:
                         base_name = field_path.split('.')[0]
                         if base_name in pointer_resolutions:
                             resolved_base = pointer_resolutions[base_name]
                             field_suffix = '.'.join(field_path.split('.')[1:])
                             targets = dataflow.resolve(f'<gstruct:{resolved_base}.{field_suffix}>')
-                    # Fallback: try <vtable:path> (old key format)
                     if not targets:
                         targets = dataflow.resolve(f'<vtable:{field_path}>')
-                    # Fallback: global initializer list
                     if not targets:
                         targets = dataflow.resolve('<vtable_init>')
 
-                    # Callback-of-callback: check if any resolved target has fnptr params
+                    # Callback-of-callback
                     func_fp_params = getattr(dataflow.state, 'func_fp_params', None) if hasattr(dataflow, 'state') else None
-
                     if func_fp_params:
                         args = node.child_by_field_name('arguments')
                         if args:
@@ -276,7 +287,6 @@ def analyze(
                             caller_line=node.start_point[0] + 1,
                         ))
             elif func_node.type == 'identifier' and func_node.text:
-                # Fallback: macro-expanded field call
                 call_name = func_node.text.decode('utf-8')
                 if call_name in macro_map:
                     body = macro_map[call_name]

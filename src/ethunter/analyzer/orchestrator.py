@@ -79,6 +79,10 @@ def run_all_analyses(
     for filepath, tree in trees.items():
         param_assign._register_phase(tree, filepath, symbol_table, engine)
 
+    # Phase 1a*: field_call Pass 1 — ALL files (collect struct field assignments)
+    for filepath, tree in trees.items():
+        field_call.collect(tree, filepath, engine, symbol_table, symbol_names)
+
     # Phase 1 Pass 1: param_binding call params (must run first, before direct_assign)
     for filepath, tree in trees.items():
         param_binding.analyze(tree, filepath, symbol_table, engine)
