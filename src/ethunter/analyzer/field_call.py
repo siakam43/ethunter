@@ -23,7 +23,7 @@ from ethunter.analyzer.helpers import (
     collect_pointer_resolutions,
 )
 from ethunter.analyzer.local_fp_tracker import collect_local_fp_assignments
-from ethunter.analyzer.field_resolver import FieldResolver
+
 
 
 def _collect_macros(tree: ts.Tree) -> dict[str, str]:
@@ -241,18 +241,7 @@ def analyze(
     pointer_resolutions = collect_pointer_resolutions(tree)
     local_fp_mapping = collect_local_fp_assignments(tree, dataflow, symbol_names, symbol_table)
 
-    # Build FieldResolver if store is available
-    resolver = None
-    if hasattr(dataflow, 'store'):
-        resolver = FieldResolver(
-            store=dataflow.store,
-            dataflow=dataflow,
-            symbol_table=symbol_table,
-            local_fp_mapping=local_fp_mapping,
-            pointer_resolutions=pointer_resolutions,
-        )
-
-    # Pass 2: detect call sites (original logic + FieldResolver pre-check)
+    # Pass 2: detect call sites
     def _visit(node: ts.Node) -> None:
         if node.type == 'call_expression':
             func_node = node.child_by_field_name('function') or node.children[0]
@@ -261,32 +250,24 @@ def analyze(
                 caller = find_enclosing_function(node, tree.root_node)
                 field_path = extract_field_path(field_expr)
                 if field_path:
-                    targets = set()
-                    confidence = Confidence.MEDIUM
-                    evidence = Evidence('field_call_resolution')
                     base_var = field_path.split('.')[0]
-
-                    # 4-tier resolver
-                    if resolver is not None:
-                        targets, confidence, evidence = \
-                            resolver.resolve_field_call(field_path, base_var, caller, filepath)
-                        # Legacy fallback: suffix scan for data not in new store
-                        if '.' in field_path:
-                            garray_targets = dataflow.resolve(f'<garray:{base_var}>')
-                            if garray_targets:
-                                targets.update(garray_targets)
-                            parts = field_path.split('.')
-                            for i in range(1, len(parts)):
-                                sfx = '.'.join(parts[i:])
-                                for key, vals in dataflow.targets.items():
-                                    if key.endswith(f'.{sfx}>') and vals:
-                                        targets.update(vals)
-                            if targets and confidence is None:
-                                confidence, evidence = Confidence.LOW, Evidence('legacy_fallback')
+                    if hasattr(dataflow, 'resolve_struct_field_call'):
+                        targets, confidence, evidence = dataflow.resolve_struct_field_call(
+                            field_path, base_var, caller, filepath,
+                            symbol_table=symbol_table,
+                            local_fp_mapping=local_fp_mapping,
+                            pointer_resolutions=pointer_resolutions,
+                        )
                     else:
+                        # Backward compat: bare VariableState (used in some tests)
                         targets = dataflow.resolve(f'<gstruct:{field_path}>')
                         if not targets:
                             targets = dataflow.resolve(f'<struct:{field_path}>')
+                        confidence = Confidence.MEDIUM
+                        evidence = Evidence('field_call_resolution')
+                    if confidence is None:
+                        confidence = Confidence.MEDIUM
+                        evidence = Evidence('field_call_resolution')
 
                     # Callback-of-callback
                     func_fp_params = getattr(dataflow.state, 'func_fp_params', None) if hasattr(dataflow, 'state') else None

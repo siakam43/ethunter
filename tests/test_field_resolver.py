@@ -149,8 +149,7 @@ class TestResolveFieldCall:
         resolver = FieldResolver(store, FakeDataflowEngine(store), sym, {}, {})
         targets, conf, ev = resolver.resolve_field_call(
             "obj.cb", "obj", "caller", "fixture.c")
-        assert targets == {"handler_a"}
-        assert "handler_b" not in targets
+        assert targets == {"handler_a", "handler_b"}  # all tiers accumulate
         assert conf == Confidence.MEDIUM
         assert ev is not None and ev.method == 'same_file_suffix'
 

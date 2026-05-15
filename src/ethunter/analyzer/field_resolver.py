@@ -174,11 +174,15 @@ class FieldResolver:
                            ) -> tuple[set[str], Confidence | None, Evidence | None]:
         """Resolve a struct field function pointer call via 4-tier chain.
 
+        All tiers run and accumulate results — this mirrors Path B behaviour
+        where suffix scans always supplemented exact matches.
         Returns (targets, Confidence|None, Evidence|None).
-        None confidence means no match — caller should use legacy fallback.
+        None confidence means no match found at any tier.
         """
         field_tail = self._store.compute_field_tail(field_path)
-        targets = set()
+        all_targets: set[str] = set()
+        best_confidence: Confidence | None = None
+        best_evidence: Evidence | None = None
 
         # === Tier 1: Type-aware exact match ===
         struct_type = None
@@ -189,15 +193,19 @@ class FieldResolver:
         if struct_type:
             targets = self._store.resolve_struct_field(f'gstruct:{struct_type}.{field_tail}')
             if targets:
-                return targets, Confidence.HIGH, Evidence('type_aware', tier=1)
+                all_targets.update(targets)
+                best_confidence = Confidence.HIGH
+                best_evidence = Evidence('type_aware', tier=1)
 
         # === Tier 2: Exact path match ===
         targets = self._store.resolve_struct_field(f'gstruct:{base_var}.{field_tail}')
         if targets:
-            return targets, Confidence.HIGH, Evidence('exact_path', tier=2)
+            all_targets.update(targets)
+            if best_confidence is None:
+                best_confidence = Confidence.HIGH
+                best_evidence = Evidence('exact_path', tier=2)
 
         # === Chain decomposition ===
-        # Handle s.method.put_cb where s.method resolves to a concrete struct
         parts = field_path.split('.')
         if len(parts) >= 3:
             for cut in range(2, len(parts)):
@@ -211,17 +219,22 @@ class FieldResolver:
                 for var_name in resolved_vars:
                     var_type = self._symbol_table.get_var_type(var_name)
                     if var_type:
-                        targets = self._store.resolve_struct_field(
+                        t = self._store.resolve_struct_field(
                             f'gstruct:{var_type}.{suffix}')
-                        if targets:
-                            return targets, Confidence.HIGH, Evidence('chain_resolve', tier=1)
-                    targets = self._store.resolve_struct_field(
+                        if t:
+                            all_targets.update(t)
+                            if best_confidence is None:
+                                best_confidence = Confidence.HIGH
+                                best_evidence = Evidence('chain_resolve', tier=1)
+                    t = self._store.resolve_struct_field(
                         f'gstruct:{var_name}.{suffix}')
-                    if targets:
-                        return targets, Confidence.HIGH, Evidence('chain_resolve_exact', tier=2)
+                    if t:
+                        all_targets.update(t)
+                        if best_confidence is None:
+                            best_confidence = Confidence.HIGH
+                            best_evidence = Evidence('chain_resolve_exact', tier=2)
 
         # === Tier 3: Progressive same-file suffix ===
-        parts = field_path.split('.')
         for i in range(1, len(parts)):
             sfx = '.'.join(parts[i:])
             for key, vals in self._store.struct_fields.items():
@@ -230,19 +243,23 @@ class FieldResolver:
                 files = self._store.struct_field_files.get(key)
                 if files and filepath not in files:
                     continue
-                targets.update(vals)
-        if targets:
-            return targets, Confidence.MEDIUM, Evidence('same_file_suffix', tier=3)
+                all_targets.update(vals)
+                if best_confidence is None:
+                    best_confidence = Confidence.MEDIUM
+                    best_evidence = Evidence('same_file_suffix', tier=3)
 
         # === Tier 4: Progressive cross-file suffix ===
         for i in range(1, len(parts)):
             sfx = '.'.join(parts[i:])
             for key, vals in self._store.struct_fields.items():
                 if key.endswith(sfx):
-                    targets.update(vals)
-        if targets:
-            return targets, Confidence.LOW, Evidence('cross_file_suffix', tier=4)
+                    all_targets.update(vals)
+                    if best_confidence is None:
+                        best_confidence = Confidence.LOW
+                        best_evidence = Evidence('cross_file_suffix', tier=4)
 
+        if all_targets:
+            return all_targets, best_confidence, best_evidence
         return set(), None, None
 
     def resolve_with_evidence(self, field_path, base_var, caller_func=None):
