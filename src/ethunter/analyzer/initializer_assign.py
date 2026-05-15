@@ -67,14 +67,12 @@ def analyze(
 
     def _assign_gstruct(field_path: str, target: str) -> None:
         """Write gstruct dataflow key in old + new (field_tail) formats."""
-        dataflow.assign(f'<gstruct:{field_path}>', target)  # backward compat
-        base_var = field_path.split('.')[0]
+        base_var= field_path.split('.')[0]
         field_tail = dataflow.store.compute_field_tail(field_path) if hasattr(dataflow, 'store') else field_path
         if hasattr(dataflow, 'store'):
             dataflow.store.assign_struct_field(f'gstruct:{base_var}.{field_tail}', target, filepath)
         struct_type = symbol_table.get_var_type(base_var)
         if struct_type:
-            dataflow.assign(f'<gstruct>:{struct_type}.{field_path}>', target)
             if hasattr(dataflow, 'store'):
                 dataflow.store.assign_struct_field(f'gstruct:{struct_type}.{field_tail}', target, filepath)
 
@@ -266,7 +264,6 @@ def analyze(
                 if c.type in _STORE_TYPES:
                     target = _extract_function_from_value(c)
                     if target:
-                        dataflow.assign(f'<garray:{var_name}>', target)
                         if hasattr(dataflow, 'store'):
                             dataflow.store.assign_global_array(var_name, target)
                         _assign_gstruct(f'{var_name}.{index}', target)
@@ -277,7 +274,6 @@ def analyze(
                     # &struct_name -> store struct name for downstream resolution
                     inner = c.children[-1] if c.children else None
                     if inner and inner.type == 'identifier' and inner.text:
-                        dataflow.assign(f'<garray:{var_name}>', inner.text.decode('utf-8'))
                         if hasattr(dataflow, 'store'):
                             dataflow.store.assign_global_array(var_name, inner.text.decode('utf-8'))
                 index += 1
@@ -297,7 +293,6 @@ def analyze(
                         elif inner.type in _STRUCT_REF_TYPES:
                             ref = inner.children[-1] if inner.children else None
                             if ref and ref.type == 'identifier' and ref.text:
-                                dataflow.assign(f'<garray:{var_name}>', ref.text.decode('utf-8'))
                                 if hasattr(dataflow, 'store'):
                                     dataflow.store.assign_global_array(var_name, ref.text.decode('utf-8'))
                         inner_index += 1
@@ -449,14 +444,12 @@ def analyze(
                         resolved = resolutions.get(var_name, var_name)
                         # Check if RHS is a literal function name
                         if raw_name in symbol_names:
-                            dataflow.assign(f'<gstruct:{resolved}.{field_name}>', raw_name)
                             if hasattr(dataflow, 'store'):
                                 dataflow.store.assign_struct_field(
                                     f'gstruct:{resolved}.{field_name}', raw_name, filepath)
                         # Check if RHS is a parameter — resolve to actual functions
                         elif raw_name in param_mappings:
                             for t in param_mappings[raw_name]:
-                                dataflow.assign(f'<gstruct:{resolved}.{field_name}>', t)
                                 if hasattr(dataflow, 'store'):
                                     dataflow.store.assign_struct_field(
                                         f'gstruct:{resolved}.{field_name}', t, filepath)

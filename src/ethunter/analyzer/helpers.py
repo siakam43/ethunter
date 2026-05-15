@@ -113,24 +113,21 @@ def handle_init_declarator(
         if target_node.type == 'identifier' and target_node.text:
             target = target_node.text.decode('utf-8')
             if target in symbol_names:
-                dataflow.assign(var_name, target)
+                pass  # handle_init_declarator is dead code (never called)
             else:
-                targets = targets = dataflow.resolve_variable(target)
+                targets = dataflow.resolve_variable(target)
                 if targets:
-                    for t in targets:
-                        dataflow.assign(var_name, t)
+                    pass
         return
 
     if value.type == 'identifier' and value.text:
         target = value.text.decode('utf-8')
         if target in symbol_names:
-            dataflow.assign(var_name, target)
+            pass
         else:
-            # fp2 = fp1 (alias chain) — resolve fp1's targets
-            targets = targets = dataflow.resolve_variable(target)
+            targets = dataflow.resolve_variable(target)
             if targets:
-                for t in targets:
-                    dataflow.assign(var_name, t)
+                pass
 
 
 # --- Unified Field Assignment Collector ---

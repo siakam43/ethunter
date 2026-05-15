@@ -227,7 +227,6 @@ def _resolve_fields(tree: ts.Tree, filepath: str, symbol_table, dataflow) -> Non
                 func_name = call_func.text.decode('utf-8')
                 ret_targets = dataflow.resolve_returned_field(func_name)
                 for t in ret_targets:
-                    dataflow.assign(f'<gstruct:{field_path}>', t)
                     if hasattr(dataflow, 'store'):
                         dataflow.store.assign_struct_field(f'gstruct:{base_var}.{field_tail}', t, filepath)
                         struct_type = symbol_table.get_func_var_type(fa.enclosing_func, base_var)
@@ -237,7 +236,6 @@ def _resolve_fields(tree: ts.Tree, filepath: str, symbol_table, dataflow) -> Non
             param_name = fa.resolved_value
             targets = param_mappings.get(param_name, set())
             for t in targets:
-                dataflow.assign(f'<struct:{field_path}>', t)
                 if hasattr(dataflow, 'store'):
                     dataflow.store.assign_struct_field(f'gstruct:{base_var}.{field_tail}', t, filepath)
                     struct_type = symbol_table.get_func_var_type(fa.enclosing_func, base_var)
@@ -247,8 +245,6 @@ def _resolve_fields(tree: ts.Tree, filepath: str, symbol_table, dataflow) -> Non
             if not df_targets:
                 df_targets = dataflow.resolve_global_array(param_name)
             for t in df_targets:
-                dataflow.assign(f'<struct:{field_path}>', t)
-                dataflow.assign(f'<struct:{field_name}>', t)
                 if hasattr(dataflow, 'store'):
                     dataflow.store.assign_struct_field(f'gstruct:{base_var}.{field_tail}', t, filepath)
                     if field_name != field_tail:

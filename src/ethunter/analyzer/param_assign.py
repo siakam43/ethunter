@@ -680,7 +680,6 @@ def analyze(
                 if hasattr(dataflow, 'resolve_returned_field'):
                     ret_targets = dataflow.resolve_returned_field(func_name)
                     for t in ret_targets:
-                        dataflow.assign(f'<gstruct:{field_path}>', t)
                         if hasattr(dataflow, 'store'):
                             dataflow.store.assign_struct_field(f'gstruct:{base_var}.{field_tail}', t, filepath)
         elif fa.resolved_value is not None:
@@ -689,7 +688,6 @@ def analyze(
             # Prong 1: resolve via param_mappings (call-site arg propagation)
             targets = param_mappings.get(param_name, set())
             for t in targets:
-                dataflow.assign(f'<struct:{field_path}>', t)
                 if hasattr(dataflow, 'store'):
                     dataflow.store.assign_struct_field(f'gstruct:{base_var}.{field_tail}', t, filepath)
             # Prong 2: resolve via dataflow
@@ -697,8 +695,6 @@ def analyze(
             if not df_targets:
                 df_targets = dataflow.resolve_global_array(param_name)
             for t in df_targets:
-                dataflow.assign(f'<struct:{field_path}>', t)
-                dataflow.assign(f'<struct:{field_name}>', t)
                 if hasattr(dataflow, 'store'):
                     dataflow.store.assign_struct_field(f'gstruct:{base_var}.{field_tail}', t, filepath)
             # Prong 3: register for cross-function propagation

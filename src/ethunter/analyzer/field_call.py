@@ -65,8 +65,7 @@ def collect(tree: ts.Tree, filepath: str, dataflow, symbol_table,
     for fa in collect_field_assignments(tree, unwrap_fn=getattr(dataflow, 'unwrap_cast', None)):
         if fa.resolved_value is not None:
             # Old store: only for known function names
-            if fa.resolved_value in symbol_names:
-                dataflow.assign(f'<gstruct:{fa.field_path}>', fa.resolved_value)
+
             # New store: ALL resolved values (functions + struct vars)
             if hasattr(dataflow, 'store'):
                 base_var = fa.field_path.split('.')[0]
@@ -227,7 +226,6 @@ def analyze(
     # Main collection moved to collect() but keep here for direct-test compat
     for fa in collect_field_assignments(tree, unwrap_fn=getattr(dataflow, 'unwrap_cast', None)):
         if fa.resolved_value is not None and fa.resolved_value in symbol_names:
-            dataflow.assign(f'<gstruct:{fa.field_path}>', fa.resolved_value)
             if hasattr(dataflow, 'store'):
                 base_var = fa.field_path.split('.')[0]
                 field_tail = dataflow.store.compute_field_tail(fa.field_path)
