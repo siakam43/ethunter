@@ -196,9 +196,31 @@ class FieldResolver:
         if targets:
             return targets, Confidence.HIGH, Evidence('exact_path', tier=2)
 
-        # === Type gate: known type + Tier 1 miss → skip Tier 3/4 suffix ===
-        # Legacy fallback in caller may still find data in old dataflow.targets.
-        # FPR reduction depends on enough type-aware keys being populated.
+        # === Chain decomposition ===
+        # Handle s.method.put_cb where s.method resolves to a concrete struct
+        parts = field_path.split('.')
+        if len(parts) >= 3:
+            for cut in range(2, len(parts)):
+                prefix = '.'.join(parts[:cut])
+                suffix = '.'.join(parts[cut:])
+
+                resolved_vars = self._store.resolve_struct_field(f'gstruct:{prefix}')
+                if not resolved_vars:
+                    continue
+
+                for var_name in resolved_vars:
+                    var_type = self._symbol_table.get_var_type(var_name)
+                    if var_type:
+                        targets = self._store.resolve_struct_field(
+                            f'gstruct:{var_type}.{suffix}')
+                        if targets:
+                            return targets, Confidence.HIGH, Evidence('chain_resolve', tier=1)
+                    targets = self._store.resolve_struct_field(
+                        f'gstruct:{var_name}.{suffix}')
+                    if targets:
+                        return targets, Confidence.HIGH, Evidence('chain_resolve_exact', tier=2)
+
+        # === Type gate: known type + Tier 1 miss + no chain success → skip suffix ===
         if struct_type:
             return set(), None, None
 
