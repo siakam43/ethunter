@@ -27,17 +27,7 @@ def analyze(
     # Read per-call-site targets from engine (populated by param_binding Phase 1)
     call_site_targets = dataflow.call_site_targets
 
-    param_mappings: dict[str, set[str]] = {}
-    if hasattr(dataflow, 'rebuild_param_mappings'):
-        param_mappings = dataflow.rebuild_param_mappings()
-    else:
-        # Backward compat: bare VariableState
-        for key, vals in dataflow.targets.items():
-            if ':' in key and not key.startswith('<'):
-                param_name = key.split(':')[-1]
-                if param_name not in param_mappings:
-                    param_mappings[param_name] = set()
-                param_mappings[param_name].update(vals)
+    param_mappings = dataflow.rebuild_param_mappings()
 
     # === Pass A: detect calls through fnptr params ===
     pass_a_edges: set[tuple[str, str, str, int]] = set()

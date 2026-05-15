@@ -416,6 +416,9 @@ def analyze(
                                 if c.type == 'identifier' and c.text:
                                     arg_name = c.text.decode('utf-8')
                                     has_gstruct = any(
+                                        k.startswith(f'gstruct:{arg_name}.') and bool(v)
+                                        for k, v in dataflow.store.struct_fields.items()
+                                    ) if hasattr(dataflow, 'store') else any(
                                         k.startswith(f'<gstruct:{arg_name}.') and bool(v)
                                         for k, v in dataflow.targets.items()
                                     )

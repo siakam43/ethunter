@@ -106,9 +106,6 @@ def analyze(
                     targets = (dataflow.resolve_variable(target) if hasattr(dataflow, 'resolve_variable') else dataflow.resolve(target))
                     if targets:
                         enclosing = find_enclosing_function(node, tree.root_node) or '<global>'
-                        dataflow.targets[f'<var>:{enclosing}:{var_name}'] = set()
-                        if hasattr(dataflow, 'store'):
-                            dataflow.store.func_vars.setdefault((enclosing, var_name), set())
                         for t in targets:
                             _assign(var_name, t, node)
             # Re-check init_declarators with deferred resolution
@@ -122,7 +119,7 @@ def analyze(
                     if var_name and target not in symbol_names:
                         targets = (dataflow.resolve_variable(target) if hasattr(dataflow, 'resolve_variable') else dataflow.resolve(target))
                         enclosing = find_enclosing_function(node, tree.root_node) or '<global>'
-                        if targets and f'<var>:{enclosing}:{var_name}' not in dataflow.targets:
+                        if targets:
                             for t in targets:
                                 _assign(var_name, t, node)
         for child in node.children:

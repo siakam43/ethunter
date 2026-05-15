@@ -227,12 +227,15 @@ def _resolve_fields(tree: ts.Tree, filepath: str, symbol_table, dataflow) -> Non
 
     # Reconstruct param_mappings from dataflow
     param_mappings: dict[str, set[str]] = {}
-    for key, vals in dataflow.targets.items():
-        if ':' in key and not key.startswith('<'):
-            p = key.split(':')[-1]
-            if p not in param_mappings:
-                param_mappings[p] = set()
-            param_mappings[p].update(vals)
+    if hasattr(dataflow, 'rebuild_param_mappings'):
+        param_mappings.update(dataflow.rebuild_param_mappings())
+    else:
+        for key, vals in dataflow.targets.items():
+            if ':' in key and not key.startswith('<'):
+                p = key.split(':')[-1]
+                if p not in param_mappings:
+                    param_mappings[p] = set()
+                param_mappings[p].update(vals)
 
     for fa in collect_field_assignments(tree, unwrap_fn=getattr(dataflow, 'unwrap_cast', None)):
         if fa.enclosing_func is None:
