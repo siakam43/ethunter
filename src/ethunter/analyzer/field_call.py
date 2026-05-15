@@ -121,6 +121,13 @@ def _collect_local_var_types(tree, symbol_table):
                     for pc in c.children:
                         if pc.type == 'identifier' and pc.text:
                             var_name = pc.text.decode('utf-8'); break
+                elif c.type == 'init_declarator':
+                    inner_decl = c.child_by_field_name('declarator')
+                    if inner_decl:
+                        from ethunter.analyzer.helpers import extract_identifier_from_declarator
+                        var_name = extract_identifier_from_declarator(inner_decl)
+                elif c.type in ('field_identifier', 'identifier') and c.text:
+                    var_name = c.text.decode('utf-8')
             if type_name and var_name:
                 symbol_table.record_func_var_type(current_func, var_name, type_name)
         for child in node.children:

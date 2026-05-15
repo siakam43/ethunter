@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "lastScanned": 1778547758297,
+  "lastScanned": 1778739224580,
   "projectRoot": "/home/admin/cc/wksp/ethunter",
   "techStack": {
     "languages": [
@@ -51,22 +51,28 @@
     "docs": {
       "path": "docs",
       "purpose": "Documentation",
-      "fileCount": 0,
-      "lastAccessed": 1778547757992,
-      "keyFiles": []
+      "fileCount": 7,
+      "lastAccessed": 1778739224458,
+      "keyFiles": [
+        "et_bench_architectural_analysis.md",
+        "et_bench_design_gap_analysis.md",
+        "et_bench_false_positive_analysis.md",
+        "et_bench_false_positive_analysis_v2.md",
+        "et_bench_false_positive_analysis_v3.md"
+      ]
     },
     "src": {
       "path": "src",
       "purpose": "Source code",
       "fileCount": 0,
-      "lastAccessed": 1778547758008,
+      "lastAccessed": 1778739224502,
       "keyFiles": []
     },
     "tests": {
       "path": "tests",
       "purpose": "Test files",
       "fileCount": 7,
-      "lastAccessed": 1778547758080,
+      "lastAccessed": 1778739224523,
       "keyFiles": [
         "test_analyzers.py",
         "test_benchmark.py",
@@ -79,7 +85,7 @@
       "path": "tests/fixtures",
       "purpose": "Test fixtures",
       "fileCount": 41,
-      "lastAccessed": 1778547758160,
+      "lastAccessed": 1778739224547,
       "keyFiles": [
         "callback_param.c",
         "callback_param_complex.c",

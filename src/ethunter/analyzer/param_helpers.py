@@ -184,6 +184,27 @@ def _collect_func_params(node, func_params: dict, func_fp_params: dict | None = 
                 func_params[fname] = params
                 if func_fp_params is not None and fp_positions:
                     func_fp_params[fname] = fp_positions
+    elif node.type == 'declaration':
+        decl = _find_child(node, 'function_declarator')
+        if decl:
+            fname, inner_decl = _find_func_name_from_decl(decl)
+            if fname:
+                params = []
+                fp_positions = set()
+                plist = _find_child(inner_decl, 'parameter_list')
+                if plist:
+                    pos = 0
+                    for p in plist.children:
+                        if p.type == 'parameter_declaration':
+                            pname = _extract_param_name(p)
+                            if pname:
+                                params.append(pname)
+                                if func_fp_params is not None and _has_fnptr_declarator(p, fnptr_typedefs):
+                                    fp_positions.add(pos)
+                                pos += 1
+                func_params[fname] = params
+                if func_fp_params is not None and fp_positions:
+                    func_fp_params[fname] = fp_positions
     for child in node.children:
         _collect_func_params(child, func_params, func_fp_params, fnptr_typedefs)
 
@@ -352,6 +373,7 @@ def prepare(tree: ts.Tree, filepath: str, dataflow, symbol_table=None) -> None:
     # Collect parameter types (new — Phase B)
     if symbol_table is not None:
         _collect_param_types(tree.root_node, symbol_table)
+        _collect_return_types(tree.root_node, symbol_table)
 
 
 def _collect_param_types(root_node, symbol_table) -> None:
@@ -400,7 +422,57 @@ def _collect_param_types(root_node, symbol_table) -> None:
                                         symbol_table.record_func_var_type(fname, pname, type_name)
                                         break
 
+            elif node.type == 'declaration':
+                decl = _find_child(node, 'function_declarator')
+                if decl:
+                    fname, inner_decl = _find_func_name_from_decl(decl)
+                    if fname:
+                        plist = _find_child(inner_decl, 'parameter_list')
+                        if plist:
+                            for p in plist.children:
+                                if p.type == 'parameter_declaration':
+                                    pname = _extract_param_name(p)
+                                    if not pname:
+                                        continue
+                                    for tc in p.children:
+                                        if tc.type == 'type_identifier' and tc.text:
+                                            type_name = tc.text.decode('utf-8')
+                                            symbol_table.record_func_var_type(fname, pname, type_name)
+                                            break
+                                        if tc.type == 'struct_specifier':
+                                            for sc in tc.children:
+                                                if sc.type == 'type_identifier' and sc.text:
+                                                    type_name = sc.text.decode('utf-8')
+                                                    symbol_table.record_func_var_type(fname, pname, type_name)
+                                                    break
+
         for child in node.children:
             _scan(child)
 
+    _scan(root_node)
+
+
+def _collect_return_types(root_node, symbol_table) -> None:
+    """Record struct pointer return types for functions.
+
+    For 'struct type *func(...)', records func_name -> 'type' in symbol_table.
+    """
+    def _scan(node):
+        if node.type in ('function_definition', 'declaration'):
+            type_node = _find_child(node, 'type')
+            decl = _find_child(node, 'function_declarator')
+            if type_node and decl:
+                fname, _ = _find_func_name_from_decl(decl)
+                if fname:
+                    for tc in type_node.children:
+                        if tc.type == 'type_identifier' and tc.text:
+                            symbol_table.record_func_return_type(fname, tc.text.decode('utf-8'))
+                            break
+                        if tc.type == 'struct_specifier':
+                            for sc in tc.children:
+                                if sc.type == 'type_identifier' and sc.text:
+                                    symbol_table.record_func_return_type(fname, sc.text.decode('utf-8'))
+                                    break
+        for child in node.children:
+            _scan(child)
     _scan(root_node)

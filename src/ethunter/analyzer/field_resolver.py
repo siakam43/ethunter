@@ -196,7 +196,9 @@ class FieldResolver:
         if targets:
             return targets, Confidence.HIGH, Evidence('exact_path', tier=2)
 
-        # === Type gate: known type + Tier 1 miss → no suffix fallback ===
+        # === Type gate: known type + Tier 1 miss → skip Tier 3/4 suffix ===
+        # Legacy fallback in caller may still find data in old dataflow.targets.
+        # FPR reduction depends on enough type-aware keys being populated.
         if struct_type:
             return set(), None, None
 
