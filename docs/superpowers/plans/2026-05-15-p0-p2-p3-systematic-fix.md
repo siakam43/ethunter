@@ -203,6 +203,7 @@ Replace lines 32-40:
                     caller_file=filepath,
                     callee_file='',
                     type=CallType.DIRECT,
+                    caller_line=node.start_point[0] + 1,
                     confidence=Confidence.HIGH,
                     evidence=Evidence('direct_call'),
                 ))
@@ -395,18 +396,30 @@ Lines 318-327 and 339 — Leave the `confidence=confidence, evidence=evidence` k
 
 - [ ] **Step 2: Update macro expansion path**
 
-Find the macro expansion edge creation (around line 329-347). Add explicit confidence:
+In the macro expansion edge creation — the `CallEdge(` constructor inside the `for body_content in ...:` loop (around line 339). Currently no explicit confidence/evidence kwargs. Add to the `CallEdge(` call:
+
 ```python
-                            confidence=Confidence.MEDIUM,
-                            evidence=Evidence('macro_expansion'),
+                            edges.append(CallEdge(
+                                caller=caller,
+                                callee=target,
+                                ...
+                                confidence=Confidence.MEDIUM,
+                                evidence=Evidence('macro_expansion'),
+                            ))
 ```
 
 - [ ] **Step 3: Update callback-of-callback path**
 
-Find the callback-of-callback edge creation (around line 284-315). Add explicit confidence:
+In the callback-of-callback resolution branch — the `CallEdge(` constructor inside the `for target in resolved_targets:` loop (around line 307). Same pattern. Add:
+
 ```python
-                            confidence=Confidence.MEDIUM,
-                            evidence=Evidence('callback_of_callback'),
+                            edges.append(CallEdge(
+                                caller=caller or '<unknown>',
+                                callee=target,
+                                ...
+                                confidence=Confidence.MEDIUM,
+                                evidence=Evidence('callback_of_callback'),
+                            ))
 ```
 
 - [ ] **Step 4: Update field_resolver return type check**
@@ -417,6 +430,8 @@ targets, confidence, evidence = \
     resolver.resolve_field_call(field_path, base_var, caller_func, filepath)
 ```
 This line works as-is — the variables just hold the new types. No change needed.
+
+**Temporary gap note**: Between this task and Task 16, `resolve_field_call()` still returns the old string `'none'` for no-match, so `confidence is None` is always `False` — legacy fallback edges in this window get `confidence=MEDIUM` (default from line 254) instead of `LOW`. This is harmless for et_bench tests (which don't assert confidence values). Resolved when Task 16 updates `resolve_field_call()` to return `(set(), None, None)` for the type-gate case.
 
 - [ ] **Step 5: Run tests**
 
@@ -439,7 +454,7 @@ git commit -m "refactor: convert field_call to Confidence enum"
 
 - [ ] **Step 1: Update param_assign CallEdge constructions**
 
-Search for all `CallEdge(` calls in param_assign.py. The module uses defaults for confidence/evidence (no explicit arguments). Replace each `CallEdge(` call that produces an indirect edge with confidence enum. There are ~7 sites in `_collect_call_params`, `_detect_param_calls`, and the Pass 4 emitter.
+Search for all `CallEdge(` calls in param_assign.py. The module uses defaults for confidence/evidence (no explicit arguments). Replace each `CallEdge(` call that produces an indirect edge with confidence enum. There are ~5 sites: callback_reg in identifier branch, callback_reg in cast_expression branch, callback_param in Pass 3 (fnptr body calls), and callback_param in Pass 4 (call-site edges — 2 sites).
 
 For each `CallEdge(` call in the `analyze()` function, add:
 ```python
@@ -521,6 +536,8 @@ With:
                 edge_map[key] = edge
     graph.edges = list(edge_map.values())
 ```
+
+额外行为变化：old code 在 `current_rank == existing_rank` 时无条件用新 DIRECT 边替换旧条目；new code 增加 `edge_map[key].type != CallType.DIRECT` 条件——当两条边同为 DIRECT 且同置信度时保留第一条。此变更是有意的：两条 DIRECT 边等价时无替换必要。
 
 - [ ] **Step 2: Run tests**
 
@@ -672,9 +689,7 @@ git commit -m "feat: expand _collect_local_var_types for non-pointer and init_de
 
 - [ ] **Step 1: Add declaration handling in _scan**
 
-In `_collect_param_types()` (line 357), inside the `_scan()` function (line 363), after the `if node.type == 'function_definition':` block (which ends with `for child in node.children: _scan(child); return` at line 376), add an `elif` branch:
-
-After line 376 (`return` statement of function_definition block), before the `for child in node.children: _scan(child)` at line 403:
+In `_collect_param_types()` (line 357), inside the `_scan()` function (line 363), change the current `if node.type == 'function_definition':` at line 364 to `if ... elif ...` by adding a new `elif` branch after the entire `function_definition` block ends (~line 401), just before the recursive `for child in node.children: _scan(child)` at line 403:
 
 ```python
             elif node.type == 'declaration':
@@ -1174,7 +1189,7 @@ git commit --allow-empty -m "checkpoint: Section 3 (Suffix scanning precision) c
 
 - [ ] **Step 1: Add usage check before each registration_sites.append**
 
-In `_collect_call_params()`, find the 4 branches that append to `dataflow.registration_sites`. In each, after the `is_reg` check confirms True but before `dataflow.registration_sites.append(...)`, add:
+In `_collect_call_params()`, find the 3 branches that append to `dataflow.registration_sites` (identifier at line 80, cast_expression at line 145, pointer_expression at line 174). In each, after the `is_reg` check confirms True but before `dataflow.registration_sites.append(...)`, add:
 
 ```python
                                 if is_reg:
@@ -1186,11 +1201,10 @@ In `_collect_call_params()`, find the 4 branches that append to `dataflow.regist
                                         dataflow.registration_sites.append({...})
 ```
 
-This replaces the current pattern that directly appends when `is_reg` is True. Apply to all 4 branches:
+This replaces the current pattern that directly appends when `is_reg` is True. Apply to all 3 branches:
 1. `identifier` branch (around line 79)
 2. `cast_expression` branch (around line 144)
 3. `pointer_expression` branch (around line 173)
-4. dataflow-fallback path (if present)
 
 - [ ] **Step 2: Run tests**
 
@@ -1255,7 +1269,7 @@ def test_new_modules_equivalent_to_old():
     import os, json
     from ethunter.parser.ast_builder import parse_file
     from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
-    from ethunter.analyzer.dataflow import VariableState
+    from ethunter.analyzer.dataflow import DataflowEngine
 
     def _run_pipeline(trees, st, df, use_old=True):
         """Run pipeline with either only-old or only-new modules."""
@@ -1270,9 +1284,9 @@ def test_new_modules_equivalent_to_old():
         graph = CallGraph()
         for filepath, tree in trees.items():
             graph.edges.extend(direct_call.analyze(tree, filepath, st.all_function_names))
-            ph.prepare(tree, filepath, st, df)
+            ph.prepare(tree, filepath, df, symbol_table=st)
             pa.register_phase(tree, filepath, st, df)
-            fc.collect(tree, filepath, st, df)
+            fc.collect(tree, filepath, st, df, st.all_function_names)
 
         for filepath, tree in trees.items():
             pb.analyze(tree, filepath, st, df)
@@ -1324,8 +1338,8 @@ def test_new_modules_equivalent_to_old():
                 expected = {(e['caller'], e['callee'])
                            for e in json.load(f).get('examples', [])}
 
-            trees_old, st_old, df_old = {}, SymbolTable(), VariableState()
-            trees_new, st_new, df_new = {}, SymbolTable(), VariableState()
+            trees_old, st_old, df_old = {}, SymbolTable(), DataflowEngine()
+            trees_new, st_new, df_new = {}, SymbolTable(), DataflowEngine()
             for root, dirs, files in os.walk(ex_dir):
                 for fn in files:
                     if fn.endswith(('.c', '.h')):
