@@ -264,6 +264,8 @@ def _resolve_fields(tree: ts.Tree, filepath: str, symbol_table, dataflow) -> Non
                 dataflow.assign(f'<struct:{field_name}>', t)
                 if hasattr(dataflow, 'store'):
                     dataflow.store.assign_struct_field(f'gstruct:{base_var}.{field_tail}', t, filepath)
+                    if field_name != field_tail:
+                        dataflow.store.assign_struct_field(f'gstruct:{field_name}', t, filepath)
                     struct_type = symbol_table.get_func_var_type(fa.enclosing_func, base_var)
                     if struct_type:
                         dataflow.store.assign_struct_field(f'gstruct:{struct_type}.{field_tail}', t, filepath)
