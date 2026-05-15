@@ -108,8 +108,10 @@ def analyze(
                                         call_site_targets[cs_key].add(target)
                                 _propagate_call_site(call_name, arg_idx, target, dataflow, symbol_names, filepath=filepath)
                             else:
-                                df_targets = dataflow.resolve(f'{caller}:{target}')
-                                if not df_targets:
+                                df_targets = (dataflow.resolve_variable(target, caller)
+                                              if hasattr(dataflow, 'resolve_variable')
+                                              else dataflow.resolve(f'{caller}:{target}'))
+                                if not df_targets and not hasattr(dataflow, 'resolve_variable'):
                                     df_targets = dataflow.resolve(target)
                                 if df_targets and arg_idx < len(param_names):
                                     pname = param_names[arg_idx]
@@ -254,11 +256,16 @@ def _resolve_fields(tree: ts.Tree, filepath: str, symbol_table, dataflow) -> Non
                     struct_type = symbol_table.get_func_var_type(fa.enclosing_func, base_var)
                     if struct_type:
                         dataflow.store.assign_struct_field(f'gstruct:{struct_type}.{field_tail}', t, filepath)
-            df_targets = dataflow.resolve(f'{fa.enclosing_func}:{param_name}')
-            if not df_targets:
-                df_targets = dataflow.resolve(param_name)
-            if not df_targets:
-                df_targets = dataflow.resolve(f'<garray:{param_name}>')
+            if hasattr(dataflow, 'resolve_variable'):
+                df_targets = dataflow.resolve_variable(param_name, fa.enclosing_func)
+                if not df_targets and hasattr(dataflow, 'resolve_global_array'):
+                    df_targets = dataflow.resolve_global_array(param_name)
+            else:
+                df_targets = dataflow.resolve(f'{fa.enclosing_func}:{param_name}')
+                if not df_targets:
+                    df_targets = dataflow.resolve(param_name)
+                if not df_targets:
+                    df_targets = dataflow.resolve(f'<garray:{param_name}>')
             for t in df_targets:
                 dataflow.assign(f'<struct:{field_path}>', t)
                 dataflow.assign(f'<struct:{field_name}>', t)

@@ -566,8 +566,10 @@ def analyze(
                                 )
                             else:
                                 # Fallback: check dataflow for local var assigned to fnptr
-                                df_targets = dataflow.resolve(f'{caller}:{target}')
-                                if not df_targets:
+                                df_targets = (dataflow.resolve_variable(target, caller)
+                                              if hasattr(dataflow, 'resolve_variable')
+                                              else dataflow.resolve(f'{caller}:{target}'))
+                                if not df_targets and not hasattr(dataflow, 'resolve_variable'):
                                     df_targets = dataflow.resolve(target)
                                 if df_targets and arg_idx < len(param_names):
                                     pname = param_names[arg_idx]
@@ -698,11 +700,16 @@ def analyze(
                 if hasattr(dataflow, 'store'):
                     dataflow.store.assign_struct_field(f'gstruct:{base_var}.{field_tail}', t, filepath)
             # Prong 2: resolve via dataflow
-            df_targets = dataflow.resolve(f'{fa.enclosing_func}:{param_name}')
-            if not df_targets:
-                df_targets = dataflow.resolve(param_name)
-            if not df_targets:
-                df_targets = dataflow.resolve(f'<garray:{param_name}>')
+            if hasattr(dataflow, 'resolve_variable'):
+                df_targets = dataflow.resolve_variable(param_name, fa.enclosing_func)
+                if not df_targets and hasattr(dataflow, 'resolve_global_array'):
+                    df_targets = dataflow.resolve_global_array(param_name)
+            else:
+                df_targets = dataflow.resolve(f'{fa.enclosing_func}:{param_name}')
+                if not df_targets:
+                    df_targets = dataflow.resolve(param_name)
+                if not df_targets:
+                    df_targets = dataflow.resolve(f'<garray:{param_name}>')
             for t in df_targets:
                 dataflow.assign(f'<struct:{field_path}>', t)
                 dataflow.assign(f'<struct:{field_name}>', t)
