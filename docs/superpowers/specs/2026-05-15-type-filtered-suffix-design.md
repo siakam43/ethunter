@@ -10,7 +10,7 @@ Path B（legacy suffix scan in field_call._visit()）存在两个问题：
 1. **无类型约束**：匹配所有同名字段，无论属于哪个 struct，产生大量误报
 2. **绕过 FieldResolver**：resolver 的类型门控对 Path B 无效
 
-但直接删除 Path B 会导致 10 条 recall 回归（链式访问依赖 suffix scan 找到数据）。
+但直接删除 Path B 会导致 10 条 recall 回归——不是因为数据缺口（数据审计确认新 store 已是旧 store 的超集），而是因为 FieldResolver 的 Tier 3/4 suffix scan 没有类型约束，被类型门控阻断了。
 
 **方案**：不改删除 Path B，改为在 Path B 中加入类型约束——仅当 suffix 匹配的 key 属于**同 struct 类型**时才接受。这样既保留召回，又消除跨类型误报。
 
@@ -92,48 +92,28 @@ if struct_type:
 # Removed: type gate. Tier 3/4 now have type filtering, safe to run always.
 ```
 
-### B.3 Path B suffix scan 加 reachability 门控（不删除）
+### B.3 直接删除 Path B suffix scan
 
 **文件**: `src/ethunter/analyzer/field_call.py`
 
-Path B 的 suffix scan 保留，但加入与 Tier 3/4 相同的 reachability 检查。理由：
-- Path B 扫描旧 store（`dataflow.targets`），Tier 3/4 扫描新 store（`struct_fields`）
-- 两个 store 中的数据不完全重叠——删除任何一个都会导致召回回落
-- 加入 reachability 门控后，两个 suffix scan 都变得类型安全
+**依据**：数据审计确认新 store 是旧 store 的超集——旧 store 中的 `<gstruct:>` 和 `<struct:>` key 全部在新 store 中有对应的 `gstruct:` key。旧 store suffix scan 从未找到 Tier 3/4 找不到的独有数据。
+
+`_visit()` 中删除整个 suffix scan 块，仅保留 garray lookup：
 
 ```python
-# Legacy suffix scan with reachability gate
+# Garray fallback: array-of-structs with positional init
 if '.' in field_path:
     garray_targets = dataflow.resolve(f'<garray:{base_var}>')
     if garray_targets:
         targets.update(garray_targets)
-    parts = field_path.split('.')
-    for i in range(1, len(parts)):
-        sfx = '.'.join(parts[i:])
-        for key, vals in dataflow.targets.items():
-            if key.endswith(f'.{sfx}>') and vals:
-                # Reachability gate: same 3-case logic as Tier 3/4
-                if struct_type:
-                    inner = key[1:-1]  # strip <> → 'gstruct:ssl3_method.put_cb'
-                    key_prefix = inner.split('.')[0].split(':')[-1]
-                    if key_prefix != struct_type:
-                        has_mappings = False
-                        reachable = False
-                        if hasattr(dataflow, 'store'):
-                            for sk, sv in dataflow.store.struct_fields.items():
-                                if sk.startswith(f'gstruct:{struct_type}.'):
-                                    has_mappings = True
-                                    if key_prefix in sv:
-                                        reachable = True; break
-                        # Case 3: no store or no field mappings → conservative pass
-                        if has_mappings and not reachable:
-                            continue
-                targets.update(vals)
-        if targets and confidence is None:
-            confidence, evidence = Confidence.LOW, Evidence('legacy_fallback')
 ```
 
-**保留的 garray lookup**：`dataflow.resolve(f'<garray:{base_var}>')` — 数组索引访问，独立于类型过滤。
+**删除的内容**（约 15 行）：
+- `for i in range(1, len(parts)):` 循环
+- 遍历 `dataflow.targets` 的 suffix 匹配
+- `if targets and confidence is None: confidence, evidence = ...`
+
+**保留**：garray lookup——处理数组索引访问（`arr[i].field()`），与 suffix 扫描无关。
 
 ## Part A: 扩展链分解
 
@@ -220,9 +200,9 @@ resolve_field_call("s.method.put_cb", "s", "ssl_cipher_list_to_bytes"):
     only accepts keys where prefix type == SSL or unknown → 过滤掉 TLS_method 的 key
   Tier 4: type-filtered cross-file suffix
   
-  // Tier 3: reachability-gated same-file suffix (new store)
-  // Tier 4: reachability-gated cross-file suffix (new store)
-  // Legacy suffix scan: reachability-gated (old store), kept as safety net
+  // Tier 3: reachability-gated same-file suffix (new store only)
+  // Tier 4: reachability-gated cross-file suffix (new store only)
+  // Path B suffix scan: DELETED (new store is superset of old store)
   // garray lookup: retained
 ```
 
@@ -239,5 +219,5 @@ resolve_field_call("s.method.put_cb", "s", "ssl_cipher_list_to_bytes"):
 | 文件 | 改动 | LoC |
 |------|------|-----|
 | `field_resolver.py` | Tier 3/4 加类型过滤；移除类型门控；多层链分解 | +15 / -5 |
-| `field_call.py` | Path B suffix scan 加 reachability 门控 | +15 |
+| `field_call.py` | 删除 Path B suffix scan；保留 garray | -15 |
 | `tests/test_et_bench.py` | 类型过滤 + 多层链分解测试 | +35 |
