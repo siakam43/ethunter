@@ -6,7 +6,7 @@ import pytest
 
 from ethunter.parser.ast_builder import parse_file
 from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
-from ethunter.analyzer.dataflow import VariableState
+from ethunter.analyzer.dataflow import VariableState, DataflowEngine
 from ethunter.analyzer.orchestrator import run_all_analyses
 
 BENCHMARK_DIR = os.path.join(os.path.dirname(__file__), 'benchmark')
@@ -16,7 +16,7 @@ def _run_analysis_on_benchmark(project_dir, source_files):
     """Run full ethunter pipeline on a benchmark project."""
     trees = {}
     st = SymbolTable()
-    df = VariableState()
+    df = DataflowEngine(state=VariableState())
     for f in source_files:
         path = os.path.join(project_dir, f)
         tree = parse_file(path)

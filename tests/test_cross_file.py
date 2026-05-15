@@ -6,7 +6,7 @@ import pytest
 from ethunter.parser.ast_builder import parse_file
 from ethunter.analyzer.direct_call import analyze as direct_analyze
 from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
-from ethunter.analyzer.dataflow import VariableState
+from ethunter.analyzer.dataflow import VariableState, DataflowEngine
 
 
 FIXTURES = os.path.join(os.path.dirname(__file__), 'fixtures', 'cross_file')
@@ -17,7 +17,7 @@ def _make_cross_file_env(dir_name, files):
     base = os.path.join(FIXTURES, dir_name)
     trees = {}
     st = SymbolTable()
-    df = VariableState()
+    df = DataflowEngine(state=VariableState())
     for f in files:
         path = os.path.join(base, f)
         tree = parse_file(path)

@@ -6,7 +6,7 @@ import pytest
 from ethunter.parser.ast_builder import parse_file
 from ethunter.analyzer.direct_call import analyze as direct_analyze
 from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
-from ethunter.analyzer.dataflow import VariableState
+from ethunter.analyzer.dataflow import VariableState, DataflowEngine
 
 FIXTURES = os.path.join(os.path.dirname(__file__), 'fixtures')
 
@@ -18,7 +18,7 @@ def _make_analyzer_env(fixture_name):
     st = SymbolTable()
     for func in extract_functions(tree, fixture_name):
         st.add_function(func)
-    df = VariableState()
+    df = DataflowEngine(state=VariableState())
     return tree, st, df
 
 
@@ -241,7 +241,7 @@ def test_symbol_table_extraction():
 
 
 def test_dataflow_assign_merge():
-    df = VariableState()
+    df = DataflowEngine(state=VariableState())
     df.assign('fp', 'foo')
     assert df.resolve('fp') == {'foo'}
     df.merge('fp', 'fp2')
@@ -254,7 +254,7 @@ def test_call_graph_dedup():
     files = ['direct_call.c', 'fp_assign.c']
     trees = {}
     st = SymbolTable()
-    df = VariableState()
+    df = DataflowEngine(state=VariableState())
     for f in files:
         path = os.path.join(FIXTURES, f)
         tree = parse_file(path)
