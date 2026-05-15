@@ -220,7 +220,7 @@ class FieldResolver:
                     if targets:
                         return targets, Confidence.HIGH, Evidence('chain_resolve_exact', tier=2)
 
-        # === Type gate: known type + Tier 1 miss + no chain success → skip suffix ===
+        # === Type gate: known type + chain miss → skip suffix ===
         if struct_type:
             return set(), None, None
 

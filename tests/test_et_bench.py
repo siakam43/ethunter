@@ -2215,3 +2215,28 @@ def test_chain_resolve_s_method_put_cb():
             f"Chain access not resolved. Got: {indirects}"
     finally:
         os.unlink(tmp)
+
+
+def test_reachability_gate_blocks_cross_struct_suffix():
+    """Tier 3 suffix should NOT match keys from a different struct type
+    when the base variable's struct_type has no field mapping to that type."""
+    from ethunter.analyzer.field_resolver import FieldResolver
+    from ethunter.analyzer.scoped_store import ScopedStore
+    from ethunter.analyzer.symbol_table import SymbolTable
+
+    store = ScopedStore()
+    st = SymbolTable()
+    # ctx has type region_model_context (like fnptr-virtual fixture)
+    st.record_func_var_type('get_fd_map', 'ctx', 'region_model_context')
+    # Populate struct_fields with data for a DIFFERENT struct type
+    store.assign_struct_field('gstruct:decorator_vtable.get_state_map_by_name', 'decorator_fn')
+    store.assign_struct_field('gstruct:noop_vtable.get_state_map_by_name', 'noop_fn')
+    # No gstruct:region_model_context.* keys exist → no field mappings
+
+    resolver = FieldResolver(store, None, st, {}, {})
+    targets, conf, ev = resolver.resolve_field_call(
+        'ctx.vtable.get_state_map_by_name', 'ctx', 'get_fd_map', 'fixture.c')
+
+    assert 'decorator_fn' not in targets, \
+        "Cross-struct suffix should be blocked by reachability gate"
+    assert 'noop_fn' not in targets

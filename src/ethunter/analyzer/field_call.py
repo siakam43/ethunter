@@ -63,24 +63,20 @@ def collect(tree: ts.Tree, filepath: str, dataflow, symbol_table,
     Runs across ALL files before Phase 2 so cross-file assignments are visible.
     """
     for fa in collect_field_assignments(tree, unwrap_fn=getattr(dataflow, 'unwrap_cast', None)):
-        if fa.resolved_value is not None:
-            is_fn = fa.resolved_value in symbol_names
-            is_var = symbol_table.get_var_type(fa.resolved_value) is not None
-            if is_fn or is_var:
-                if is_fn:
-                    # Write old-format key for backward compat (used by suffix scans)
-                    dataflow.assign(f'<gstruct:{fa.field_path}>', fa.resolved_value)
-                # Write to ScopedStore with field_tail convention
-                if hasattr(dataflow, 'store'):
-                    base_var = fa.field_path.split('.')[0]
-                    field_tail = dataflow.store.compute_field_tail(fa.field_path)
-                    dataflow.store.assign_struct_field(f'gstruct:{base_var}.{field_tail}',
+        if fa.resolved_value is not None and fa.resolved_value in symbol_names:
+            # Write old-format key for backward compat (used by suffix scans)
+            dataflow.assign(f'<gstruct:{fa.field_path}>', fa.resolved_value)
+            # Write to ScopedStore with field_tail convention
+            if hasattr(dataflow, 'store'):
+                base_var = fa.field_path.split('.')[0]
+                field_tail = dataflow.store.compute_field_tail(fa.field_path)
+                dataflow.store.assign_struct_field(f'gstruct:{base_var}.{field_tail}',
+                                                   fa.resolved_value, filepath)
+                # If type is known, also write type-aware key
+                struct_type = symbol_table.get_func_var_type(fa.enclosing_func, base_var)
+                if struct_type:
+                    dataflow.store.assign_struct_field(f'gstruct:{struct_type}.{field_tail}',
                                                        fa.resolved_value, filepath)
-                    # If type is known, also write type-aware key
-                    struct_type = symbol_table.get_func_var_type(fa.enclosing_func, base_var)
-                    if struct_type:
-                        dataflow.store.assign_struct_field(f'gstruct:{struct_type}.{field_tail}',
-                                                           fa.resolved_value, filepath)
     _collect_local_var_types(tree, symbol_table)
     _collect_cast_types(tree, symbol_table)
 
@@ -230,21 +226,17 @@ def analyze(
     # Pass 1: collect field assignments (still needed for macro-expanded calls)
     # Main collection moved to collect() but keep here for direct-test compat
     for fa in collect_field_assignments(tree, unwrap_fn=getattr(dataflow, 'unwrap_cast', None)):
-        if fa.resolved_value is not None:
-            is_fn = fa.resolved_value in symbol_names
-            is_var = symbol_table.get_var_type(fa.resolved_value) is not None
-            if is_fn or is_var:
-                if is_fn:
-                    dataflow.assign(f'<gstruct:{fa.field_path}>', fa.resolved_value)
-                if hasattr(dataflow, 'store'):
-                    base_var = fa.field_path.split('.')[0]
-                    field_tail = dataflow.store.compute_field_tail(fa.field_path)
-                    dataflow.store.assign_struct_field(f'gstruct:{base_var}.{field_tail}',
+        if fa.resolved_value is not None and fa.resolved_value in symbol_names:
+            dataflow.assign(f'<gstruct:{fa.field_path}>', fa.resolved_value)
+            if hasattr(dataflow, 'store'):
+                base_var = fa.field_path.split('.')[0]
+                field_tail = dataflow.store.compute_field_tail(fa.field_path)
+                dataflow.store.assign_struct_field(f'gstruct:{base_var}.{field_tail}',
+                                                   fa.resolved_value, filepath)
+                struct_type = symbol_table.get_func_var_type(fa.enclosing_func, base_var)
+                if struct_type:
+                    dataflow.store.assign_struct_field(f'gstruct:{struct_type}.{field_tail}',
                                                        fa.resolved_value, filepath)
-                    struct_type = symbol_table.get_func_var_type(fa.enclosing_func, base_var)
-                    if struct_type:
-                        dataflow.store.assign_struct_field(f'gstruct:{struct_type}.{field_tail}',
-                                                           fa.resolved_value, filepath)
 
     pointer_resolutions = collect_pointer_resolutions(tree)
     local_fp_mapping = collect_local_fp_assignments(tree, dataflow, symbol_names, symbol_table)
@@ -278,9 +270,7 @@ def analyze(
                     if resolver is not None:
                         targets, confidence, evidence = \
                             resolver.resolve_field_call(field_path, base_var, caller, filepath)
-                        # Legacy fallback: suffix scan for remaining data gaps
-                        # (chain access not resolvable via struct_fields alone,
-                        #  array-of-structs with positional init, cross-module data)
+                        # Legacy fallback: suffix scan for data not in new store
                         if '.' in field_path:
                             garray_targets = dataflow.resolve(f'<garray:{base_var}>')
                             if garray_targets:
