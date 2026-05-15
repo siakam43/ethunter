@@ -115,7 +115,7 @@ def handle_init_declarator(
             if target in symbol_names:
                 dataflow.assign(var_name, target)
             else:
-                targets = (dataflow.resolve_variable(target) if hasattr(dataflow, 'resolve_variable') else dataflow.resolve(target))
+                targets = targets = dataflow.resolve_variable(target)
                 if targets:
                     for t in targets:
                         dataflow.assign(var_name, t)
@@ -127,7 +127,7 @@ def handle_init_declarator(
             dataflow.assign(var_name, target)
         else:
             # fp2 = fp1 (alias chain) — resolve fp1's targets
-            targets = (dataflow.resolve_variable(target) if hasattr(dataflow, 'resolve_variable') else dataflow.resolve(target))
+            targets = targets = dataflow.resolve_variable(target)
             if targets:
                 for t in targets:
                     dataflow.assign(var_name, t)

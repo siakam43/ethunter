@@ -259,7 +259,6 @@ def analyze(
                             pointer_resolutions=pointer_resolutions,
                         )
                     else:
-                        # Backward compat: bare VariableState (used in some tests)
                         targets = dataflow.resolve(f'<gstruct:{field_path}>')
                         if not targets:
                             targets = dataflow.resolve(f'<struct:{field_path}>')
