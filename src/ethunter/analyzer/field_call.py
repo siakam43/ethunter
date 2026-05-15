@@ -15,7 +15,7 @@ import re
 
 import tree_sitter as ts
 
-from ethunter.graph.model import CallEdge, CallType
+from ethunter.graph.model import CallEdge, CallType, Confidence, Evidence
 from ethunter.analyzer.dataflow import VariableState
 from ethunter.analyzer.symbol_table import SymbolTable
 from ethunter.analyzer.helpers import (
@@ -251,8 +251,8 @@ def analyze(
                 field_path = extract_field_path(field_expr)
                 if field_path:
                     targets = set()
-                    confidence = 'medium'
-                    evidence = 'field_call resolution'
+                    confidence = Confidence.MEDIUM
+                    evidence = Evidence('field_call_resolution')
                     base_var = field_path.split('.')[0]
 
                     # 4-tier resolver
@@ -273,8 +273,8 @@ def analyze(
                                 for key, vals in dataflow.targets.items():
                                     if key.endswith(f'.{sfx}>') and vals:
                                         targets.update(vals)
-                            if targets and confidence in ('none', ''):
-                                confidence, evidence = 'low', 'legacy dataflow fallback'
+                            if targets and confidence is None:
+                                confidence, evidence = Confidence.LOW, Evidence('legacy_fallback')
                     else:
                         targets = dataflow.resolve(f'<gstruct:{field_path}>')
                         if not targets:
@@ -312,6 +312,8 @@ def analyze(
                                                 type=CallType.INDIRECT,
                                                 indirect_kind='callback_param',
                                                 caller_line=node.start_point[0] + 1,
+                                                confidence=Confidence.MEDIUM,
+                                                evidence=Evidence('callback_of_callback'),
                                             ))
 
                     for target in targets:
@@ -344,6 +346,8 @@ def analyze(
                                     type=CallType.INDIRECT,
                                     indirect_kind='field_call',
                                     caller_line=node.start_point[0] + 1,
+                                    confidence=Confidence.MEDIUM,
+                                    evidence=Evidence('macro_expansion'),
                                 ))
         for child in node.children:
             _visit(child)

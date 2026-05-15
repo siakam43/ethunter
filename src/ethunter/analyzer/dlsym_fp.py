@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import tree_sitter as ts
 
-from ethunter.graph.model import CallEdge, CallType
+from ethunter.graph.model import CallEdge, CallType, Confidence, Evidence
 from ethunter.analyzer.dataflow import VariableState
 from ethunter.analyzer.symbol_table import SymbolTable
 
@@ -39,8 +39,8 @@ def analyze(
                                         type=CallType.INDIRECT,
                                         indirect_kind='dlsym_fp',
                                         caller_line=node.start_point[0] + 1,
-                                        confidence='low',
-                                        evidence='dlsym string literal match',
+                                        confidence=Confidence.LOW,
+                                        evidence=Evidence('dlsym_string_match'),
                                     ))
         for child in node.children:
             _visit(child)

@@ -1,5 +1,6 @@
 """Unit tests for FieldResolver and ResolutionStrategy classes."""
 import pytest
+from ethunter.graph.model import Confidence, Evidence
 from ethunter.analyzer.scoped_store import ScopedStore
 from ethunter.analyzer.field_resolver import (
     ResolutionContext, TypeAwareStructLookup, ExactPathStructLookup,
@@ -126,8 +127,8 @@ class TestResolveFieldCall:
         targets, conf, ev = resolver.resolve_field_call(
             "obj.cb", "obj", "caller", "fixture.c")
         assert targets == {"handler_a"}
-        assert conf == 'high'
-        assert 'type-aware' in ev
+        assert conf == Confidence.HIGH
+        assert ev is not None and ev.method == 'type_aware'
 
     def test_tier2_exact_path_when_no_type(self):
         store = ScopedStore()
@@ -137,8 +138,8 @@ class TestResolveFieldCall:
         targets, conf, ev = resolver.resolve_field_call(
             "handler.cb", "handler", "caller", "fixture.c")
         assert targets == {"handler_a"}
-        assert conf == 'high'
-        assert 'exact path' in ev
+        assert conf == Confidence.HIGH
+        assert ev is not None and ev.method == 'exact_path'
 
     def test_tier3_same_file_suffix(self):
         store = ScopedStore()
@@ -150,8 +151,8 @@ class TestResolveFieldCall:
             "obj.cb", "obj", "caller", "fixture.c")
         assert targets == {"handler_a"}
         assert "handler_b" not in targets
-        assert conf == 'medium'
-        assert 'same-file' in ev
+        assert conf == Confidence.MEDIUM
+        assert ev is not None and ev.method == 'same_file_suffix'
 
     def test_tier4_cross_file_suffix(self):
         store = ScopedStore()
@@ -161,8 +162,8 @@ class TestResolveFieldCall:
         targets, conf, ev = resolver.resolve_field_call(
             "obj.cb", "obj", "caller", "fixture.c")
         assert targets == {"handler_a"}
-        assert conf == 'low'
-        assert 'cross-file' in ev
+        assert conf == Confidence.LOW
+        assert ev is not None and ev.method == 'cross_file_suffix'
 
     def test_returns_empty_when_no_match(self):
         store = ScopedStore()
@@ -171,4 +172,4 @@ class TestResolveFieldCall:
         targets, conf, ev = resolver.resolve_field_call(
             "x.y", "x", "func", "f.c")
         assert targets == set()
-        assert conf == 'none'
+        assert conf is None

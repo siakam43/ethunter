@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import tree_sitter as ts
 
-from ethunter.graph.model import CallEdge, CallType
+from ethunter.graph.model import CallEdge, CallType, Confidence, Evidence
 from ethunter.analyzer.param_helpers import _is_registration
 
 
@@ -46,8 +46,10 @@ def analyze(
         if usage == 'unknown' and not _is_registration(callee):
             continue
 
-        confidence, evidence = ('medium', 'behavioral: fnptr called in callee body') \
-            if usage == 'caller' else ('low', f'heuristic: registration name match ({callee})')
+        if usage == 'caller':
+            confidence, evidence = Confidence.MEDIUM, Evidence('behavioral_registration')
+        else:
+            confidence, evidence = Confidence.LOW, Evidence('heuristic_registration')
 
         edges.append(CallEdge(
             caller=site["caller"],

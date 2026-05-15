@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import tree_sitter as ts
 
-from ethunter.graph.model import CallEdge, CallType
+from ethunter.graph.model import CallEdge, CallType, Confidence, Evidence
 from ethunter.analyzer.dataflow import VariableState
 from ethunter.analyzer.symbol_table import SymbolTable
 from ethunter.analyzer.helpers import find_enclosing_function
@@ -53,8 +53,8 @@ def analyze(
                             type=CallType.INDIRECT,
                             indirect_kind='array_call',
                             caller_line=node.start_point[0] + 1,
-                            confidence='high',
-                            evidence='global array dispatch',
+                            confidence=Confidence.MEDIUM,
+                            evidence=Evidence('array_dispatch'),
                         ))
         for child in node.children:
             _visit(child)

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import tree_sitter as ts
 
-from ethunter.graph.model import CallGraph, CallType, CallEdge
+from ethunter.graph.model import CallGraph, CallType, CallEdge, Confidence
 from ethunter.analyzer.dataflow import VariableState, DataflowEngine
 from ethunter.analyzer.symbol_table import SymbolTable
 from ethunter.analyzer import (
@@ -166,18 +166,17 @@ def run_all_analyses(
         graph.edges = filtered
 
     # Deduplicate: keep highest-confidence edge for each (caller, callee) pair
-    _confidence_rank = {'high': 3, 'medium': 2, 'low': 1}
     edge_map: dict[tuple[str, str], CallEdge] = {}
     for edge in graph.edges:
         key = (edge.caller, edge.callee)
         if key not in edge_map:
             edge_map[key] = edge
         else:
-            current_rank = _confidence_rank.get(edge.confidence, 0)
-            existing_rank = _confidence_rank.get(edge_map[key].confidence, 0)
-            if current_rank > existing_rank:
+            if edge.confidence.ordinal() > edge_map[key].confidence.ordinal():
                 edge_map[key] = edge
-            elif current_rank == existing_rank and edge.type == CallType.DIRECT:
+            elif (edge.confidence == edge_map[key].confidence
+                  and edge.type == CallType.DIRECT
+                  and edge_map[key].type != CallType.DIRECT):
                 edge_map[key] = edge
 
     graph.edges = list(edge_map.values())

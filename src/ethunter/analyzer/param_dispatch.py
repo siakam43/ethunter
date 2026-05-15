@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import tree_sitter as ts
 
-from ethunter.graph.model import CallEdge, CallType
+from ethunter.graph.model import CallEdge, CallType, Confidence, Evidence
 from ethunter.analyzer.helpers import find_enclosing_function
 
 
@@ -96,8 +96,8 @@ def analyze(
             type=CallType.INDIRECT,
             indirect_kind='callback_param',
             caller_line=line,
-            confidence='high',
-            evidence='fnptr call in callee body',
+            confidence=Confidence.HIGH,
+            evidence=Evidence('callee_body_call'),
         ))
 
     # === Pass B: call-site caller edges (dedup against Pass A) ===
@@ -120,8 +120,8 @@ def analyze(
                 type=CallType.INDIRECT,
                 indirect_kind='callback_param',
                 caller_line=0,
-                confidence='medium',
-                evidence='call-site caller -> target',
+                confidence=Confidence.MEDIUM,
+                evidence=Evidence('call_site_propagation'),
             ))
 
     return edges

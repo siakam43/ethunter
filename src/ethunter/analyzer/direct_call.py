@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import tree_sitter as ts
 
-from ethunter.graph.model import CallEdge, CallType
+from ethunter.graph.model import CallEdge, CallType, Confidence, Evidence
 from ethunter.analyzer.symbol_table import extract_functions
 
 
@@ -36,8 +36,8 @@ def analyze(tree: ts.Tree, filepath: str, symbol_names: set[str], **kwargs) -> l
                         callee_file='',
                         type=CallType.DIRECT,
                         caller_line=node.start_point[0] + 1,
-                        confidence='high',
-                        evidence='direct call expression',
+                        confidence=Confidence.HIGH,
+                        evidence=Evidence('direct_call'),
                     ))
         for child in node.children:
             _visit(child)

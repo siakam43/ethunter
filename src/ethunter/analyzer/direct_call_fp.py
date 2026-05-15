@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import tree_sitter as ts
 
-from ethunter.graph.model import CallEdge, CallType
+from ethunter.graph.model import CallEdge, CallType, Confidence, Evidence
 from ethunter.analyzer.dataflow import VariableState
 from ethunter.analyzer.symbol_table import SymbolTable
 from ethunter.analyzer.helpers import find_enclosing_function
@@ -34,26 +34,26 @@ def analyze(
         Returns (targets, confidence, evidence).
         """
         targets = set()
-        confidence, evidence = 'medium', 'direct_assign resolution'
+        confidence, evidence = Confidence.MEDIUM, Evidence('flat_fp', source='dataflow')
         if caller_func:
             if hasattr(dataflow, 'store'):
                 targets = dataflow.store.resolve_func_var(caller_func, var_name)
                 if targets:
-                    confidence, evidence = 'high', 'scoped variable resolution'
+                    confidence, evidence = Confidence.HIGH, Evidence('scoped_fp', source='scoped_store')
                 if not targets:
                     targets = dataflow.store.resolve_func_var('<global>', var_name)
                     if targets:
-                        confidence, evidence = 'high', 'global variable resolution'
+                        confidence, evidence = Confidence.HIGH, Evidence('global_fp', source='scoped_store')
             if not targets:
                 targets = dataflow.resolve(f'<var>:{caller_func}:{var_name}')
                 if targets:
-                    confidence, evidence = 'high', 'scoped variable resolution'
+                    confidence, evidence = Confidence.HIGH, Evidence('scoped_fp', source='dataflow')
         if not targets:
             targets = dataflow.resolve(var_name)
         if not targets:
             targets = local_mapping.get(var_name, set()).copy()
             if targets:
-                confidence, evidence = 'medium', 'local fp from struct field'
+                confidence, evidence = Confidence.MEDIUM, Evidence('struct_field_init', source='local_fp_mapping')
         return targets, confidence, evidence
 
     def _add_edges(func_name: str, call_node: ts.Node) -> None:

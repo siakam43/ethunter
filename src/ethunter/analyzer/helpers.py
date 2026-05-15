@@ -62,6 +62,7 @@ def extract_field_path(node: ts.Node) -> str | None:
     Examples: c->funcs->read -> "c.funcs.read"
               obj.field -> "obj.field"
               arr[i].field -> "arr.field"
+              ((struct ctx*)ptr)->field -> "ptr.field"
     """
     if node.type == 'field_expression':
         parts = []
@@ -77,6 +78,17 @@ def extract_field_path(node: ts.Node) -> str | None:
                 base = child.children[0]
                 if base.type == 'identifier' and base.text:
                     parts.append(base.text.decode('utf-8'))
+            elif child.type == 'parenthesized_expression':
+                # Handle ((struct foo*)ptr)->field -> find identifier inside cast
+                for pc in child.children:
+                    if pc.type == 'cast_expression':
+                        for cc in pc.children:
+                            if cc.type == 'identifier' and cc.text:
+                                parts.append(cc.text.decode('utf-8'))
+                            elif cc.type == 'field_expression':
+                                inner = extract_field_path(cc)
+                                if inner:
+                                    parts.extend(inner.split('.'))
         return '.'.join(parts) if parts else None
     return None
 
@@ -183,6 +195,28 @@ def collect_field_assignments(tree: ts.Tree, unwrap_fn=None) -> list[FieldAssign
                 line=pair_node.start_point[0] + 1,
             ))
 
+    def _unwrap_lhs(lhs: ts.Node) -> ts.Node | None:
+        """Unwrap parenthesized_expression / cast_expression to find field_expression."""
+        node = lhs
+        while node.type in ('parenthesized_expression', 'cast_expression'):
+            # parenthesized_expression: ( cast_expression ( type_descriptor ) field_expression )
+            # cast_expression: ( type_descriptor ) field_expression
+            if node.type == 'parenthesized_expression':
+                for c in node.children:
+                    if c.type in ('cast_expression', 'field_expression'):
+                        node = c
+                        break
+                else:
+                    return None
+            elif node.type == 'cast_expression':
+                for c in node.children:
+                    if c.type == 'field_expression':
+                        node = c
+                        break
+                else:
+                    return None
+        return node if node.type == 'field_expression' else None
+
     def _scan(node: ts.Node) -> None:
         # Form 1: assignment_expression
         if node.type == 'assignment_expression':
@@ -190,19 +224,21 @@ def collect_field_assignments(tree: ts.Tree, unwrap_fn=None) -> list[FieldAssign
             rhs = node.child_by_field_name('right') or (
                 node.children[-1] if len(node.children) >= 2 else None
             )
-            if lhs and rhs and lhs.type == 'field_expression':
-                field_path = extract_field_path(lhs)
-                if field_path:
-                    enclosing_func = find_enclosing_function(node, tree.root_node)
-                    resolved = _unwrap_identifier(rhs, unwrap_fn)
-                    results.append(FieldAssignment(
-                        field_path=field_path,
-                        value_node=rhs,
-                        resolved_value=resolved,
-                        form='assign',
-                        enclosing_func=enclosing_func,
-                        line=node.start_point[0] + 1,
-                    ))
+            if lhs and rhs:
+                field_expr = lhs if lhs.type == 'field_expression' else _unwrap_lhs(lhs)
+                if field_expr:
+                    field_path = extract_field_path(field_expr)
+                    if field_path:
+                        enclosing_func = find_enclosing_function(node, tree.root_node)
+                        resolved = _unwrap_identifier(rhs, unwrap_fn)
+                        results.append(FieldAssignment(
+                            field_path=field_path,
+                            value_node=rhs,
+                            resolved_value=resolved,
+                            form='assign',
+                            enclosing_func=enclosing_func,
+                            line=node.start_point[0] + 1,
+                        ))
 
         # Form 2: designated_initializer inside init_declarator
         if node.type == 'init_declarator':

@@ -55,7 +55,7 @@ class TestFromDict:
             "functions": [],
             "edges": [{"caller": "a", "callee": "b", "type": "unknown_type"}],
         }
-        with pytest.raises(ValueError, match="Unknown CallType"):
+        with pytest.raises(ValueError, match="valid CallType"):
             CallGraph.from_dict(data)
 
 

@@ -8,6 +8,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
+from ethunter.graph.model import Confidence, Evidence
+
 
 @dataclass
 class ResolutionContext:
@@ -169,12 +171,11 @@ class FieldResolver:
 
     def resolve_field_call(self, field_path: str, base_var: str,
                            caller_func: str | None, filepath: str
-                           ) -> tuple[set[str], str, str]:
+                           ) -> tuple[set[str], Confidence | None, Evidence | None]:
         """Resolve a struct field function pointer call via 4-tier chain.
 
-        Returns (targets, confidence, evidence).
-        Tier 1: type-aware exact, Tier 2: exact path,
-        Tier 3: same-file suffix, Tier 4: cross-file suffix.
+        Returns (targets, Confidence|None, Evidence|None).
+        None confidence means no match — caller should use legacy fallback.
         """
         field_tail = self._store.compute_field_tail(field_path)
         targets = set()
@@ -188,12 +189,16 @@ class FieldResolver:
         if struct_type:
             targets = self._store.resolve_struct_field(f'gstruct:{struct_type}.{field_tail}')
             if targets:
-                return targets, 'high', f'type-aware: {struct_type}.{field_tail}'
+                return targets, Confidence.HIGH, Evidence('type_aware', tier=1)
 
         # === Tier 2: Exact path match ===
         targets = self._store.resolve_struct_field(f'gstruct:{base_var}.{field_tail}')
         if targets:
-            return targets, 'high', f'exact path: {base_var}.{field_tail}'
+            return targets, Confidence.HIGH, Evidence('exact_path', tier=2)
+
+        # === Type gate: known type + Tier 1 miss → no suffix fallback ===
+        if struct_type:
+            return set(), None, None
 
         # === Tier 3: Same-file scoped suffix ===
         suffix = f'.{field_tail}'
@@ -202,20 +207,19 @@ class FieldResolver:
                 continue
             files = self._store.struct_field_files.get(key)
             if files and filepath not in files:
-                continue  # tracked, different file → skip
-            # Untracked entries pass through (backward compat with legacy writes)
+                continue
             targets.update(vals)
         if targets:
-            return targets, 'medium', f'same-file suffix: {suffix}'
+            return targets, Confidence.MEDIUM, Evidence('same_file_suffix', tier=3)
 
-        # === Tier 4: Cross-file suffix (last resort) ===
+        # === Tier 4: Cross-file suffix ===
         for key, vals in self._store.struct_fields.items():
             if key.endswith(suffix):
                 targets.update(vals)
         if targets:
-            return targets, 'low', f'cross-file suffix: {suffix}'
+            return targets, Confidence.LOW, Evidence('cross_file_suffix', tier=4)
 
-        return set(), 'none', ''
+        return set(), None, None
 
     def resolve_with_evidence(self, field_path, base_var, caller_func=None):
         """Resolve targets and return (targets, strategy_name)."""
