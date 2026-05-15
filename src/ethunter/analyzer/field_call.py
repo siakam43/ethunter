@@ -232,7 +232,7 @@ def analyze(
                 base_var = fa.field_path.split('.')[0]
                 field_tail = dataflow.store.compute_field_tail(fa.field_path)
                 dataflow.store.assign_struct_field(f'gstruct:{base_var}.{field_tail}',
-                                                   fa.resolved_value)
+                                                   fa.resolved_value, filepath)
 
     pointer_resolutions = collect_pointer_resolutions(tree)
     local_fp_mapping = collect_local_fp_assignments(tree, dataflow, symbol_names, symbol_table)

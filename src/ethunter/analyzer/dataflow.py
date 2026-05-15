@@ -114,6 +114,7 @@ class DataflowEngine:
         param_idx: int,
         arg_name: str,
         symbol_names: set[str] | None = None,
+        filepath: str = '',
     ) -> set[str]:
         """Resolve what targets the call-site argument has, and propagate to field paths.
 
@@ -140,7 +141,7 @@ class DataflowEngine:
                 self.state.assign(field_key, target)
                 # Strip <...> brackets, keep gstruct: prefix
                 if field_key.startswith('<gstruct:') and field_key.endswith('>'):
-                    self.store.assign_struct_field(field_key[1:-1], target)
+                    self.store.assign_struct_field(field_key[1:-1], target, filepath)
 
         return arg_targets
 

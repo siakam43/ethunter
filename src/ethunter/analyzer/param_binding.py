@@ -15,11 +15,11 @@ from ethunter.analyzer.param_helpers import (
 
 def _propagate_call_site(
     call_name: str, arg_idx: int, target: str,
-    dataflow, symbol_names: set[str],
+    dataflow, symbol_names: set[str], filepath: str = '',
 ) -> None:
     """Propagate a call-site argument target to registered field paths."""
     dataflow.resolve_call_site_param(
-        call_name, arg_idx, target, symbol_names=symbol_names
+        call_name, arg_idx, target, symbol_names=symbol_names, filepath=filepath
     )
 
 
@@ -77,14 +77,17 @@ def analyze(
                                     if _is_registration(call_name):
                                         is_reg = True
                                 if is_reg:
-                                    dataflow.registration_sites.append({
-                                        "caller": caller or '<unknown>',
-                                        "callee": call_name,
-                                        "arg_idx": arg_idx,
-                                        "target": target,
-                                        "file": filepath,
-                                        "line": node.start_point[0] + 1,
-                                    })
+                                    pu = getattr(dataflow.state, 'param_usage', None)
+                                    usage = pu.get((call_name, arg_idx), 'unknown') if pu else 'unknown'
+                                    if usage not in ('forwarder', 'storage'):
+                                        dataflow.registration_sites.append({
+                                            "caller": caller or '<unknown>',
+                                            "callee": call_name,
+                                            "arg_idx": arg_idx,
+                                            "target": target,
+                                            "file": filepath,
+                                            "line": node.start_point[0] + 1,
+                                        })
                                     if arg_idx < len(param_names):
                                         pname = param_names[arg_idx]
                                         dataflow.assign(f'{call_name}:{pname}', target)
@@ -103,7 +106,7 @@ def analyze(
                                         if cs_key not in call_site_targets:
                                             call_site_targets[cs_key] = set()
                                         call_site_targets[cs_key].add(target)
-                                _propagate_call_site(call_name, arg_idx, target, dataflow, symbol_names)
+                                _propagate_call_site(call_name, arg_idx, target, dataflow, symbol_names, filepath=filepath)
                             else:
                                 df_targets = dataflow.resolve(f'{caller}:{target}')
                                 if not df_targets:
@@ -142,20 +145,23 @@ def analyze(
                                     if _is_registration(call_name):
                                         is_reg = True
                                 if is_reg:
-                                    dataflow.registration_sites.append({
-                                        "caller": caller or '<unknown>',
-                                        "callee": call_name,
-                                        "arg_idx": arg_idx,
-                                        "target": target,
-                                        "file": filepath,
-                                        "line": node.start_point[0] + 1,
-                                    })
+                                    pu = getattr(dataflow.state, 'param_usage', None)
+                                    usage = pu.get((call_name, arg_idx), 'unknown') if pu else 'unknown'
+                                    if usage not in ('forwarder', 'storage'):
+                                        dataflow.registration_sites.append({
+                                            "caller": caller or '<unknown>',
+                                            "callee": call_name,
+                                            "arg_idx": arg_idx,
+                                            "target": target,
+                                            "file": filepath,
+                                            "line": node.start_point[0] + 1,
+                                        })
                                 elif arg_idx < len(param_names):
                                     pname = param_names[arg_idx]
                                     if pname not in param_mappings:
                                         param_mappings[pname] = set()
                                     param_mappings[pname].add(target)
-                                _propagate_call_site(call_name, arg_idx, target, dataflow, symbol_names)
+                                _propagate_call_site(call_name, arg_idx, target, dataflow, symbol_names, filepath=filepath)
                         elif c.type == 'pointer_expression' and c.children:
                             inner = c.children[-1]
                             if inner.type == 'identifier' and inner.text:
@@ -191,7 +197,7 @@ def analyze(
                                         if cs_key not in call_site_targets:
                                             call_site_targets[cs_key] = set()
                                         call_site_targets[cs_key].add(target)
-                                    _propagate_call_site(call_name, arg_idx, target, dataflow, symbol_names)
+                                    _propagate_call_site(call_name, arg_idx, target, dataflow, symbol_names, filepath=filepath)
         for child in node.children:
             _collect_call_params(child)
 

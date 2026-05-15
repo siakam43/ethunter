@@ -2106,3 +2106,50 @@ def test_collect_cast_types_records_struct_types():
     field_call.collect(tree, "test.c", engine, st, st.all_function_names)
     t = st.get_func_var_type("do_work", "ptr")
     assert t == "ctx", f"Expected ctx, got {t}"
+
+
+# === Confidence round-trip tests ===
+
+from ethunter.graph.model import CallEdge, CallType, Confidence, Evidence
+
+
+def test_confidence_round_trip():
+    """CallEdge.to_dict() -> from_dict() preserves confidence and evidence."""
+    edge = CallEdge(
+        caller="main",
+        callee="handler",
+        caller_file="a.c",
+        callee_file="",
+        type=CallType.INDIRECT,
+        indirect_kind="callback_param",
+        caller_line=42,
+        confidence=Confidence.HIGH,
+        evidence=Evidence("callee_body_call"),
+    )
+    d = edge.to_dict()
+    restored = CallEdge.from_dict(d)
+    assert restored.confidence == Confidence.HIGH
+    assert restored.evidence is not None
+    assert restored.evidence.method == "callee_body_call"
+
+
+def test_confidence_round_trip_default_medium():
+    """Default confidence MEDIUM must survive round-trip (always serialized)."""
+    edge = CallEdge(
+        caller="main",
+        callee="helper",
+        caller_file="b.c",
+        callee_file="",
+        type=CallType.DIRECT,
+    )
+    d = edge.to_dict()
+    assert "confidence" in d, "confidence must always be serialized"
+    assert d["confidence"] == "medium"
+    restored = CallEdge.from_dict(d)
+    assert restored.confidence == Confidence.MEDIUM
+
+
+def test_confidence_ordinals():
+    """Verify confidence ordering for dedup."""
+    assert Confidence.HIGH.ordinal() > Confidence.MEDIUM.ordinal()
+    assert Confidence.MEDIUM.ordinal() > Confidence.LOW.ordinal()
