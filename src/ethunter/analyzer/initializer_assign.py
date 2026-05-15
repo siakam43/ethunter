@@ -410,10 +410,16 @@ def analyze(
                         # Check if RHS is a literal function name
                         if raw_name in symbol_names:
                             dataflow.assign(f'<gstruct:{resolved}.{field_name}>', raw_name)
+                            if hasattr(dataflow, 'store'):
+                                dataflow.store.assign_struct_field(
+                                    f'gstruct:{resolved}.{field_name}', raw_name, filepath)
                         # Check if RHS is a parameter — resolve to actual functions
                         elif raw_name in param_mappings:
                             for t in param_mappings[raw_name]:
                                 dataflow.assign(f'<gstruct:{resolved}.{field_name}>', t)
+                                if hasattr(dataflow, 'store'):
+                                    dataflow.store.assign_struct_field(
+                                        f'gstruct:{resolved}.{field_name}', t, filepath)
             for child in n.children:
                 _visit(child)
 

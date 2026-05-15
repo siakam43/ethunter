@@ -258,6 +258,10 @@ def _resolve_fields(tree: ts.Tree, filepath: str, symbol_table, dataflow) -> Non
                 dataflow.assign(f'<struct:{field_name}>', t)
                 if hasattr(dataflow, 'store'):
                     dataflow.store.assign_struct_field(f'gstruct:{base_var}.{field_tail}', t, filepath)
+                    # Also write field_name-only key for suffix fallback compatibility
+                    if field_name != field_tail:
+                        dataflow.store.assign_struct_field(
+                            f'gstruct:{base_var}.{field_name}', t, filepath)
             if fa.enclosing_func in func_params:
                 params = func_params[fa.enclosing_func]
                 if param_name in params:
