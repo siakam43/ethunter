@@ -246,22 +246,15 @@ class DataflowEngine:
         self.ret_fields[func_name].add(field_path)
 
     def resolve_returned_field(self, func_name: str) -> set[str]:
-        """Resolve the targets of the field path that func_name returns.
-
-        Exact <gstruct:{field_path}> lookup first, then suffix fallback for
-        variable-name mismatches (e.g., stored under "ret" but return uses "ctx").
-        """
+        """Resolve the targets of the field path that func_name returns."""
         if func_name not in self.ret_fields:
             return set()
 
         results = set()
         for field_path in self.ret_fields[func_name]:
-            # Exact match via store first, then old state fallback
             results.update(self.store.resolve_struct_field(f'gstruct:{field_path}'))
-            targets = self.state.resolve(f'<gstruct:{field_path}>')
-            results.update(targets)
+            results.update(self.state.resolve(f'<gstruct:{field_path}>'))
 
-            # Suffix fallback via store first, then old state
             parts = field_path.split('.')
             for i in range(1, len(parts)):
                 suffix = '.'.join(parts[i:])
