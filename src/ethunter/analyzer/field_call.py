@@ -251,19 +251,12 @@ def analyze(
                 field_path = extract_field_path(field_expr)
                 if field_path:
                     base_var = field_path.split('.')[0]
-                    if hasattr(dataflow, 'resolve_struct_field_call'):
-                        targets, confidence, evidence = dataflow.resolve_struct_field_call(
-                            field_path, base_var, caller, filepath,
-                            symbol_table=symbol_table,
-                            local_fp_mapping=local_fp_mapping,
-                            pointer_resolutions=pointer_resolutions,
-                        )
-                    else:
-                        targets = dataflow.resolve(f'<gstruct:{field_path}>')
-                        if not targets:
-                            targets = dataflow.resolve(f'<struct:{field_path}>')
-                        confidence = Confidence.MEDIUM
-                        evidence = Evidence('field_call_resolution')
+                    targets, confidence, evidence = dataflow.resolve_struct_field_call(
+                        field_path, base_var, caller, filepath,
+                        symbol_table=symbol_table,
+                        local_fp_mapping=local_fp_mapping,
+                        pointer_resolutions=pointer_resolutions,
+                    )
                     if confidence is None:
                         confidence = Confidence.MEDIUM
                         evidence = Evidence('field_call_resolution')

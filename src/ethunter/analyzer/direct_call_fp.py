@@ -33,39 +33,14 @@ def analyze(
 
         Returns (targets, confidence, evidence).
         """
-        if hasattr(dataflow, 'resolve_variable'):
-            targets = dataflow.resolve_variable(var_name, caller_func, local_fp_mapping=local_mapping)
-            if targets:
-                if caller_func:
-                    confidence, evidence = Confidence.HIGH, Evidence('scoped_fp', source='scoped_store')
-                else:
-                    confidence, evidence = Confidence.MEDIUM, Evidence('flat_fp', source='dataflow')
+        targets = dataflow.resolve_variable(var_name, caller_func, local_fp_mapping=local_mapping)
+        if targets:
+            if caller_func:
+                confidence, evidence = Confidence.HIGH, Evidence('scoped_fp', source='scoped_store')
             else:
                 confidence, evidence = Confidence.MEDIUM, Evidence('flat_fp', source='dataflow')
-            return targets, confidence, evidence
-
-        # Backward compat: bare VariableState
-        targets = set()
-        confidence, evidence = Confidence.MEDIUM, Evidence('flat_fp', source='dataflow')
-        if caller_func:
-            if hasattr(dataflow, 'store'):
-                targets = dataflow.store.resolve_func_var(caller_func, var_name)
-                if targets:
-                    confidence, evidence = Confidence.HIGH, Evidence('scoped_fp', source='scoped_store')
-                if not targets:
-                    targets = dataflow.store.resolve_func_var('<global>', var_name)
-                    if targets:
-                        confidence, evidence = Confidence.HIGH, Evidence('global_fp', source='scoped_store')
-            if not targets:
-                targets = dataflow.resolve(f'<var>:{caller_func}:{var_name}')
-                if targets:
-                    confidence, evidence = Confidence.HIGH, Evidence('scoped_fp', source='dataflow')
-        if not targets:
-            targets = dataflow.resolve(var_name)
-        if not targets:
-            targets = local_mapping.get(var_name, set()).copy()
-            if targets:
-                confidence, evidence = Confidence.MEDIUM, Evidence('struct_field_init', source='local_fp_mapping')
+        else:
+            confidence, evidence = Confidence.MEDIUM, Evidence('flat_fp', source='dataflow')
         return targets, confidence, evidence
 
     def _add_edges(func_name: str, call_node: ts.Node) -> None:

@@ -296,28 +296,6 @@ void *SSL_CTX_get_security_callback(void *ctx) {
 
         assert "SSL_CTX_get_security_callback" in df.ret_fields
 
-    def test_variable_state_downgrade(self):
-        """When VariableState is passed, no AttributeError from hasattr guards."""
-        from ethunter.analyzer import param_assign
-
-        lang = Language(tsc.language())
-        parser = Parser(lang)
-
-        source = b'''
-void alpn_cb(void *ctx) {}
-void SSL_CTX_set_alpn_select_cb(void *ctx, void (*cb)(void)) {
-    ctx->ext.alpn_select_cb = cb;
-}
-'''
-        tree = parser.parse(source)
-
-        st = SymbolTable()
-        for func in extract_functions(tree, 'test.c'):
-            st.add_function(func)
-
-        vs = VariableState()
-        edges = param_assign.analyze(tree, 'test.c', st, vs)
-        assert isinstance(edges, list)
 
 
 class TestParamAssignCallSitePropagation:

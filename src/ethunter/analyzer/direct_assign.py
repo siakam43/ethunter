@@ -47,7 +47,7 @@ def analyze(
                         _assign(var_name, target, node)
                     else:
                         # Alias chain: fp2 = fp1
-                        targets = (dataflow.resolve_variable(target) if hasattr(dataflow, 'resolve_variable') else dataflow.resolve(target))
+                        targets = dataflow.resolve_variable(target)
                         if targets:
                             for t in targets:
                                 _assign(var_name, t, node)
@@ -69,7 +69,7 @@ def analyze(
                     if target in symbol_names:
                         _assign(var_name, target, node)
                     else:
-                        targets = (dataflow.resolve_variable(target) if hasattr(dataflow, 'resolve_variable') else dataflow.resolve(target))
+                        targets = dataflow.resolve_variable(target)
                         if targets:
                             for t in targets:
                                 _assign(var_name, t, node)
@@ -82,7 +82,7 @@ def analyze(
                 if target in symbol_names:
                     _assign(var_name, target, node)
                 else:
-                    targets = (dataflow.resolve_variable(target) if hasattr(dataflow, 'resolve_variable') else dataflow.resolve(target))
+                    targets = dataflow.resolve_variable(target)
                     if targets:
                         for t in targets:
                             _assign(var_name, t, node)
@@ -103,7 +103,7 @@ def analyze(
                 var_name = lhs.text.decode('utf-8')
                 target = rhs.text.decode('utf-8')
                 if target not in symbol_names:
-                    targets = (dataflow.resolve_variable(target) if hasattr(dataflow, 'resolve_variable') else dataflow.resolve(target))
+                    targets = dataflow.resolve_variable(target)
                     if targets:
                         enclosing = find_enclosing_function(node, tree.root_node) or '<global>'
                         for t in targets:
@@ -117,7 +117,7 @@ def analyze(
                     var_name = extract_identifier_from_declarator(declarator)
                     target = value.text.decode('utf-8')
                     if var_name and target not in symbol_names:
-                        targets = (dataflow.resolve_variable(target) if hasattr(dataflow, 'resolve_variable') else dataflow.resolve(target))
+                        targets = dataflow.resolve_variable(target)
                         enclosing = find_enclosing_function(node, tree.root_node) or '<global>'
                         if targets:
                             for t in targets:
