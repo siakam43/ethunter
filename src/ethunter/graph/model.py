@@ -11,6 +11,39 @@ class CallType(Enum):
     INDIRECT = "indirect"
 
 
+class Confidence(Enum):
+    """Edge confidence level. Ordinal used for dedup — higher wins."""
+    HIGH = 'high'
+    MEDIUM = 'medium'
+    LOW = 'low'
+
+    def ordinal(self) -> int:
+        return _CONFIDENCE_RANK[self]
+
+
+_CONFIDENCE_RANK = {
+    Confidence.HIGH: 3,
+    Confidence.MEDIUM: 2,
+    Confidence.LOW: 1,
+}
+
+
+@dataclass(frozen=True)
+class Evidence:
+    """Structured evidence for how an edge was discovered."""
+    method: str
+    tier: int | None = None
+    source: str | None = None
+
+    def __str__(self) -> str:
+        parts = [self.method]
+        if self.tier is not None:
+            parts.append(f'tier={self.tier}')
+        if self.source:
+            parts.append(self.source)
+        return ':'.join(parts)
+
+
 @dataclass(frozen=True)
 class Function:
     """Represents a C function definition or declaration."""
@@ -37,8 +70,8 @@ class CallEdge:
     type: CallType = CallType.DIRECT
     indirect_kind: str = ""
     caller_line: int = 0
-    confidence: str = 'medium'   # 'high' | 'medium' | 'low'
-    evidence: str = ''           # human-readable evidence description
+    confidence: Confidence = Confidence.MEDIUM
+    evidence: Evidence | None = None
 
     def to_dict(self) -> dict:
         d = {
@@ -52,11 +85,42 @@ class CallEdge:
             d["indirect_kind"] = self.indirect_kind
         if self.caller_line:
             d["caller_line"] = self.caller_line
-        if self.confidence != 'medium':
-            d["confidence"] = self.confidence
+        d["confidence"] = self.confidence.value
         if self.evidence:
-            d["evidence"] = self.evidence
+            d["evidence"] = str(self.evidence)
         return d
+
+    @classmethod
+    def from_dict(cls, d: dict) -> 'CallEdge':
+        conf_value = d.get('confidence', 'medium')
+        evidence_str = d.get('evidence', '')
+        return cls(
+            caller=d['caller'],
+            callee=d['callee'],
+            caller_file=d.get('caller_file', ''),
+            callee_file=d.get('callee_file', ''),
+            type=CallType(d['type']),
+            indirect_kind=d.get('indirect_kind', ''),
+            caller_line=d.get('caller_line', 0),
+            confidence=Confidence(conf_value) if conf_value in ('high', 'medium', 'low') else Confidence.MEDIUM,
+            evidence=_parse_evidence(evidence_str) if evidence_str else None,
+        )
+
+
+def _parse_evidence(s: str) -> Evidence | None:
+    """Parse evidence string in format: method[:tier=N][:source]."""
+    if not s:
+        return None
+    parts = s.split(':')
+    method = parts[0]
+    tier = None
+    source = None
+    for p in parts[1:]:
+        if p.startswith('tier='):
+            tier = int(p.split('=')[1])
+        else:
+            source = p
+    return Evidence(method=method, tier=tier, source=source)
 
 
 @dataclass
@@ -98,22 +162,7 @@ class CallGraph:
             )
             graph.add_function(func)
         for ed in d.get("edges", []):
-            type_str = ed.get("type", CallType.DIRECT.value)
-            try:
-                edge_type = CallType(type_str)
-            except ValueError:
-                raise ValueError(f"Unknown CallType: {type_str!r}")
-            edge = CallEdge(
-                caller=ed["caller"],
-                callee=ed["callee"],
-                caller_file=ed.get("caller_file", ""),
-                callee_file=ed.get("callee_file", ""),
-                type=edge_type,
-                indirect_kind=ed.get("indirect_kind", ""),
-                caller_line=ed.get("caller_line", 0),
-                confidence=ed.get("confidence", "medium"),
-                evidence=ed.get("evidence", ""),
-            )
+            edge = CallEdge.from_dict(ed)
             graph.add_edge(edge)
         graph.source_files = d.get("source_files", [])
         return graph
