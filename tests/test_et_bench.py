@@ -2153,3 +2153,65 @@ def test_confidence_ordinals():
     """Verify confidence ordering for dedup."""
     assert Confidence.HIGH.ordinal() > Confidence.MEDIUM.ordinal()
     assert Confidence.MEDIUM.ordinal() > Confidence.LOW.ordinal()
+
+
+def test_unwrap_pointer_expression():
+    """_unwrap_identifier should extract identifier from &expr (pointer_expression)."""
+    import tree_sitter_c as tsc
+    from tree_sitter import Language, Parser
+    from ethunter.analyzer.helpers import _unwrap_identifier as _unwrap_id
+
+    source = b'void setup(void) { ctx->handler = &my_handler; }'
+    lang = Language(tsc.language())
+    parser = Parser(lang)
+    tree = parser.parse(source)
+
+    found = []
+    def _visit(n):
+        if n.type == 'pointer_expression':
+            result = _unwrap_id(n)
+            found.append(result)
+        for child in n.children:
+            _visit(child)
+    _visit(tree.root_node)
+    assert found == ['my_handler'], f"Expected my_handler, got {found}"
+
+
+def test_chain_resolve_s_method_put_cb():
+    """Chain access s->method->put_cb must resolve through s.method -> ssl3_method."""
+    import tempfile, os
+    from ethunter.parser.ast_builder import parse_file
+    from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
+    from ethunter.analyzer.dataflow import VariableState
+    from ethunter.analyzer.orchestrator import run_all_analyses
+
+    code = b"""
+    typedef struct SSL_METHOD { int (*put_cb)(void); } SSL_METHOD;
+    typedef struct SSL { SSL_METHOD *method; } SSL;
+
+    int ssl3_put_cb(void) { return 1; }
+    static const SSL_METHOD ssl3_method = { .put_cb = ssl3_put_cb, };
+
+    int ssl_cipher_list_to_bytes(SSL *s) {
+        s->method = (SSL_METHOD *)&ssl3_method;
+        return s->method->put_cb();
+    }
+    """
+    with tempfile.NamedTemporaryFile(suffix='.c', delete=False) as f:
+        f.write(code)
+        tmp = f.name
+    try:
+        tree = parse_file(tmp)
+        trees = {tmp: tree}
+        st = SymbolTable()
+        for func in extract_functions(tree, tmp):
+            st.add_function(func)
+        df = VariableState()
+        graph = run_all_analyses(trees, st, df)
+
+        indirects = {(e.caller, e.callee)
+                    for e in graph.edges if e.type.value == 'indirect'}
+        assert ('ssl_cipher_list_to_bytes', 'ssl3_put_cb') in indirects, \
+            f"Chain access not resolved. Got: {indirects}"
+    finally:
+        os.unlink(tmp)

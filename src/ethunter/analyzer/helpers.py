@@ -148,7 +148,7 @@ FieldAssignment = namedtuple('FieldAssignment', [
 
 
 def _unwrap_identifier(node: ts.Node, unwrap_fn=None) -> str | None:
-    """Extract identifier text from a node, unwrapping cast expressions."""
+    """Extract identifier text from a node, unwrapping cast & pointer expressions."""
     if node.type == 'identifier' and node.text:
         return node.text.decode('utf-8')
     if node.type == 'cast_expression':
@@ -160,6 +160,9 @@ def _unwrap_identifier(node: ts.Node, unwrap_fn=None) -> str | None:
             result = _unwrap_identifier(c, unwrap_fn)
             if result:
                 return result
+    if node.type == 'pointer_expression' and node.children:
+        inner = node.children[-1]
+        return _unwrap_identifier(inner, unwrap_fn)
     return None
 
 
