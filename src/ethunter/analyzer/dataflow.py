@@ -168,16 +168,10 @@ class DataflowEngine:
         return targets, confidence, evidence
 
     def rebuild_param_mappings(self) -> dict[str, set[str]]:
-        """Rebuild param_name -> {targets} mapping from old store.
-
-        Only aggregates keys with ':' format (written by param_binding),
-        filtering out '<var>:...' keys (written by direct_assign).
-        """
+        """Rebuild param_name -> {targets} mapping from _param_bindings."""
         result: dict[str, set[str]] = {}
-        for key, vals in self.state.targets.items():
-            if ':' in key and not key.startswith('<'):
-                param_name = key.split(':')[-1]
-                result.setdefault(param_name, set()).update(vals)
+        for (call_name, param_name), vals in self._param_bindings.items():
+            result.setdefault(param_name, set()).update(vals)
         return result
 
     @property
