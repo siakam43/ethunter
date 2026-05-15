@@ -32,31 +32,49 @@ for key, vals in self._store.struct_fields.items():
     targets.update(vals)
 ```
 
-改为类型感知的 suffix scan：
+改为**可达性门控** suffix scan——仅接受可通过 struct_fields 从 base_var 的 struct_type 到达的 key：
 
 ```python
-# Tier 3: type-filtered same-file suffix
+# Tier 3: reachability-gated same-file suffix
 suffix = f'.{field_tail}'
 for key, vals in self._store.struct_fields.items():
     if not key.endswith(suffix): continue
-    # Type filter: if struct_type known, only accept same-type matches
+    # Reachability gate: if struct_type known, only accept reachable keys
     if struct_type:
         key_prefix = key[len('gstruct:'):].split('.')[0]
-        # Case 1: prefix IS the type name (e.g., gstruct:SSL_METHOD.put_cb)
         if key_prefix == struct_type:
-            pass  # accept
-        # Case 2: prefix is a variable name → look up its type
+            pass  # Case 1: prefix IS the struct_type → accept
         else:
-            key_type = self._symbol_table.get_var_type(key_prefix)
-            if key_type and key_type != struct_type:
-                continue  # different struct type → skip
-        # Case 3: prefix not in var_types → pass (unknown type, be conservative)
+            # Case 2: check if key_prefix is reachable via struct_type field assignments
+            has_field_mappings = False
+            reachable = False
+            for sk, sv in self._store.struct_fields.items():
+                if sk.startswith(f'gstruct:{struct_type}.'):
+                    has_field_mappings = True
+                    if key_prefix in sv:
+                        reachable = True
+                        break
+            # Case 3: no field mappings for struct_type at all → conservative pass
+            # (struct type info exists but no field assignments tracked yet)
+            if has_field_mappings and not reachable:
+                continue  # prefix NOT reachable from struct_type → skip
     files = self._store.struct_field_files.get(key)
     if files and filepath not in files: continue
     targets.update(vals)
 ```
 
-Tier 4 同样加入类型过滤（键前缀类型检查）。
+Tier 4 同逻辑（去掉文件过滤）。
+
+**三 case 语义**：
+| Case | 条件 | 行为 |
+|------|------|------|
+| 1 | `key_prefix == struct_type` | 直接接受 |
+| 2 | struct_type 有字段映射，key_prefix 不在其中 | 拒绝（unreachable） |
+| 3 | struct_type 完全无字段映射 | 保守接受（防止新类型无数据时全部被过滤） |
+
+**正确性论证**：
+- fnptr-virtual: `struct_type=region_model_context`，struct_fields 中无 `region_model_context.* → decorator_vtable` 映射 → unreachable → 60 FPs 被过滤 ✅
+- fnptr-struct: `struct_type=SSL`，struct_fields 有 `SSL.method → ssl3_method` → reachable → 真实边通过 ✅
 
 ### B.2 移除类型门控
 
@@ -74,27 +92,48 @@ if struct_type:
 # Removed: type gate. Tier 3/4 now have type filtering, safe to run always.
 ```
 
-### B.3 同步移除 Path B 的旧 store suffix scan
+### B.3 Path B suffix scan 加 reachability 门控（不删除）
 
 **文件**: `src/ethunter/analyzer/field_call.py`
 
-`_visit()` 中的 legacy fallback（lines 273-289）包含两个独立部分：
-1. **garray lookup**: `dataflow.resolve(f'<garray:{base_var}>')` — 独立路径，不受类型影响
-2. **suffix scan**: `for key in dataflow.targets: if key.endswith(suffix) → targets.update(vals)` — 无类型约束
-
-步骤：
-1. **保留** garray lookup（数组索引访问，不受类型过滤影响）
-2. **删除** suffix scan — 现在 Tier 3/4 已覆盖且类型安全
-
-修改后的 `_visit()` legacy 部分：
+Path B 的 suffix scan 保留，但加入与 Tier 3/4 相同的 reachability 检查。理由：
+- Path B 扫描旧 store（`dataflow.targets`），Tier 3/4 扫描新 store（`struct_fields`）
+- 两个 store 中的数据不完全重叠——删除任何一个都会导致召回回落
+- 加入 reachability 门控后，两个 suffix scan 都变得类型安全
 
 ```python
-# Garray fallback: array-of-structs with positional init
+# Legacy suffix scan with reachability gate
 if '.' in field_path:
     garray_targets = dataflow.resolve(f'<garray:{base_var}>')
     if garray_targets:
         targets.update(garray_targets)
+    parts = field_path.split('.')
+    for i in range(1, len(parts)):
+        sfx = '.'.join(parts[i:])
+        for key, vals in dataflow.targets.items():
+            if key.endswith(f'.{sfx}>') and vals:
+                # Reachability gate: same 3-case logic as Tier 3/4
+                if struct_type:
+                    inner = key[1:-1]  # strip <> → 'gstruct:ssl3_method.put_cb'
+                    key_prefix = inner.split('.')[0].split(':')[-1]
+                    if key_prefix != struct_type:
+                        has_mappings = False
+                        reachable = False
+                        if hasattr(dataflow, 'store'):
+                            for sk, sv in dataflow.store.struct_fields.items():
+                                if sk.startswith(f'gstruct:{struct_type}.'):
+                                    has_mappings = True
+                                    if key_prefix in sv:
+                                        reachable = True; break
+                        # Case 3: no store or no field mappings → conservative pass
+                        if has_mappings and not reachable:
+                            continue
+                targets.update(vals)
+        if targets and confidence is None:
+            confidence, evidence = Confidence.LOW, Evidence('legacy_fallback')
 ```
+
+**保留的 garray lookup**：`dataflow.resolve(f'<garray:{base_var}>')` — 数组索引访问，独立于类型过滤。
 
 ## Part A: 扩展链分解
 
@@ -181,8 +220,10 @@ resolve_field_call("s.method.put_cb", "s", "ssl_cipher_list_to_bytes"):
     only accepts keys where prefix type == SSL or unknown → 过滤掉 TLS_method 的 key
   Tier 4: type-filtered cross-file suffix
   
-  // 旧 Path B 的 suffix scan 已删除
-  // garray lookup 保留
+  // Tier 3: reachability-gated same-file suffix (new store)
+  // Tier 4: reachability-gated cross-file suffix (new store)
+  // Legacy suffix scan: reachability-gated (old store), kept as safety net
+  // garray lookup: retained
 ```
 
 ## 验证标准
@@ -198,5 +239,5 @@ resolve_field_call("s.method.put_cb", "s", "ssl_cipher_list_to_bytes"):
 | 文件 | 改动 | LoC |
 |------|------|-----|
 | `field_resolver.py` | Tier 3/4 加类型过滤；移除类型门控；多层链分解 | +15 / -5 |
-| `field_call.py` | 删除旧 store suffix scan；保留 garray | -10 |
+| `field_call.py` | Path B suffix scan 加 reachability 门控 | +15 |
 | `tests/test_et_bench.py` | 类型过滤 + 多层链分解测试 | +35 |
