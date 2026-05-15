@@ -21,27 +21,11 @@ _NilSymbolTable = _NilSymbolTableType()
 
 @dataclass
 class VariableState:
-    """Tracks possible function targets for each variable across the codebase."""
-    # Maps variable name -> set of possible function target names
-    targets: dict[str, set[str]] = field(default_factory=dict)
-    # Maps variable name -> type info (e.g., 'fp', 'fp[]', 'struct.member')
+    """Track variable type info and callback registrations."""
     var_types: dict[str, str] = field(default_factory=dict)
-    def assign(self, var_name: str, target: str) -> None:
-        if var_name not in self.targets:
-            self.targets[var_name] = set()
-        self.targets[var_name].add(target)
-
-    def merge(self, src_var: str, dst_var: str) -> None:
-        if src_var in self.targets:
-            if dst_var not in self.targets:
-                self.targets[dst_var] = set()
-            self.targets[dst_var].update(self.targets[src_var])
-
-    def resolve(self, var_name: str) -> set[str]:
-        return self.targets.get(var_name, set()).copy()
 
     def register_callback(self, func_name: str) -> None:
-        """No-op: registered_callbacks was dead code. Removed in arch refactor Phase 2."""
+        """No-op: registered_callbacks was dead code."""
 
 @dataclass
 class DataflowEngine:
@@ -93,19 +77,65 @@ class DataflowEngine:
         if key not in self._param_bindings:
             self._param_bindings[key] = set()
         self._param_bindings[key].add(target)
-        # Backward compat: also write to old store for tests that read it directly
-        self.state.assign(f'{call_name}:{param_name}', target)
 
     # === Backward compatible interface ===
 
     def assign(self, var_name: str, target: str) -> None:
-        self.state.assign(var_name, target)
+        """Assign a target to a key, routing to ScopedStore for structured prefixes."""
+        if var_name.startswith('<gstruct:'):
+            key = var_name[len('<gstruct:'):-1]
+            self.store.assign_struct_field(f'gstruct:{key}', target)
+        elif var_name.startswith('<struct:'):
+            key = var_name[len('<struct:'):-1]
+            self.store.assign_struct_field(f'gstruct:{key}', target)
+        elif var_name.startswith('<garray:'):
+            name = var_name[len('<garray:'):-1]
+            self.store.assign_global_array(name, target)
+        elif var_name.startswith('<var>:'):
+            parts = var_name[len('<var>:'):].split(':', 1)
+            if len(parts) == 2:
+                self.store.assign_func_var(parts[0], parts[1], target)
+        else:
+            self.store.assign_func_var('<global>', var_name, target)
 
     def resolve(self, var_name: str) -> set[str]:
-        return self.state.resolve(var_name)
+        """Resolve a key, checking ScopedStore first for structured prefixes."""
+        if var_name.startswith('<gstruct:'):
+            key = var_name[len('<gstruct:'):-1]  # strip <gstruct: and >
+            return self.store.resolve_struct_field(f'gstruct:{key}')
+        if var_name.startswith('<struct:'):
+            key = var_name[len('<struct:'):-1]
+            return self.store.resolve_struct_field(f'gstruct:{key}')
+        if var_name.startswith('<garray:'):
+            name = var_name[len('<garray:'):-1]
+            return self.store.resolve_global_array(name)
+        if var_name.startswith('<var>:'):
+            parts = var_name[len('<var>:'):].split(':', 1)
+            if len(parts) == 2:
+                return self.resolve_variable(parts[1], parts[0])
+            return self.resolve_variable(var_name)
+        if var_name == '<initializer>':
+            return set()
+        if ':' in var_name and not var_name.startswith('<'):
+            func, param = var_name.split(':', 1)
+            results = self.resolve_variable(param, func)
+            for (call, pname), vals in self._param_bindings.items():
+                if call == func and pname == param:
+                    results.update(vals)
+            return results
+        results: set[str] = set()
+        for (func, var), vals in self.store.func_vars.items():
+            if var == var_name:
+                results.update(vals)
+        return results
 
     def merge(self, src_var: str, dst_var: str) -> None:
-        self.state.merge(src_var, dst_var)
+        """Merge src_var targets into dst_var using func_vars."""
+        to_merge = [(func, dst_var, v) for (func, var), vals
+                    in list(self.store.func_vars.items())
+                    if var == src_var for v in vals]
+        for func, dvar, v in to_merge:
+            self.store.assign_func_var(func, dvar, v)
 
     def resolve_variable(self, var_name: str, caller_func: str | None = None,
                          local_fp_mapping: dict | None = None) -> set[str]:
@@ -178,7 +208,17 @@ class DataflowEngine:
 
     @property
     def targets(self) -> dict[str, set[str]]:
-        return self.state.targets
+        """Aggregate targets from all stores for backward compat."""
+        result: dict[str, set[str]] = {}
+        for (func, var), vals in self.store.func_vars.items():
+            key = f'<var>:{func}:{var}'
+            result.setdefault(key, set()).update(vals)
+            result.setdefault(var, set()).update(vals)
+        for key, vals in self.store.struct_fields.items():
+            result.setdefault(f'<{key}>', set()).update(vals)
+        for key, vals in self.store.global_arrays.items():
+            result.setdefault(f'<{key}>', set()).update(vals)
+        return result
 
     def register_callback(self, func_name: str) -> None:
         """No-op: registered_callbacks was dead code. Removed in arch refactor Phase 2."""
@@ -220,7 +260,7 @@ class DataflowEngine:
             return set()
 
         # Step 1: Try scoped store resolve (for variables that were assigned)
-        arg_targets = self.state.resolve(arg_name)
+        arg_targets = self.resolve_variable(arg_name)
 
         # Step 2: If arg_name itself is a known function name, add it directly
         if symbol_names and arg_name in symbol_names:
@@ -232,8 +272,7 @@ class DataflowEngine:
         for target in arg_targets:
             for field_key in self.param_fields[key]:
                 # Phase A: dual-write to old state and new store
-                self.state.assign(field_key, target)
-                # Strip <...> brackets, keep gstruct: prefix
+                # Migrate to ScopedStore
                 if field_key.startswith('<gstruct:') and field_key.endswith('>'):
                     self.store.assign_struct_field(field_key[1:-1], target, filepath)
 
@@ -259,7 +298,6 @@ class DataflowEngine:
         results = set()
         for field_path in self.ret_fields[func_name]:
             results.update(self.store.resolve_struct_field(f'gstruct:{field_path}'))
-            results.update(self.state.resolve(f'<gstruct:{field_path}>'))
 
             parts = field_path.split('.')
             for i in range(1, len(parts)):
@@ -267,9 +305,6 @@ class DataflowEngine:
                 before = len(results)
                 for key, vals in self.store.struct_fields.items():
                     if key.endswith(f'.{suffix}') and vals:
-                        results.update(vals)
-                for key, vals in self.state.targets.items():
-                    if key.endswith(f'.{suffix}>') and vals:
                         results.update(vals)
                 if len(results) > before:
                     break

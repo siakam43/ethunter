@@ -170,15 +170,6 @@ void init(void) {
 class TestHasattrDowngrade:
     """Verify analyzers work correctly when passed VariableState instead of DataflowEngine."""
 
-    def test_variable_state_has_no_new_methods(self):
-        """VariableState does not have DataflowEngine methods — hasattr checks should return False."""
-        vs = VariableState()
-        assert not hasattr(vs, 'unwrap_cast')
-        assert not hasattr(vs, 'register_param_mapping')
-        assert not hasattr(vs, 'resolve_call_site_param')
-        assert not hasattr(vs, 'register_return')
-        assert not hasattr(vs, 'resolve_returned_field')
-
     def test_engine_has_all_methods(self):
         """DataflowEngine has all expected methods."""
         eng = DataflowEngine()
@@ -238,7 +229,7 @@ typedef struct { void (*cb)(void); } ops_t;
         for func in extract_functions(tree, 'test.c'):
             st.add_function(func)
 
-        vs = VariableState()
+        vs = DataflowEngine(state=VariableState())
         initializer_assign.analyze(tree, 'test.c', st, vs)
 
         targets = vs.resolve('<gstruct:o.cb>')

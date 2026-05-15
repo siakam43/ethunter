@@ -113,7 +113,7 @@ def test_param_assign_simple():
     tree, st, df = _make_analyzer_env('param_assign.c')
     edges = param_assign.analyze(tree, 'param_assign.c', st, df)
     assert len(df.targets) > 0
-    assert any(k.startswith('<struct:') for k in df.targets)
+    assert any(k.startswith('<gstruct:') for k in df.targets)
 
 
 def test_param_assign_complex():
