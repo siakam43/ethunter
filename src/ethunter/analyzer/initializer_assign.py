@@ -15,6 +15,46 @@ from ethunter.analyzer.symbol_table import SymbolTable
 from ethunter.analyzer.helpers import extract_identifier_from_declarator, collect_pointer_resolutions
 
 
+def collect_var_types(tree: ts.Tree, filepath: str,
+                      symbol_table, dataflow) -> None:
+    """Phase 1a: collect struct variable types from init_declarators.
+    Must run BEFORE field_call.collect() so var_types are available.
+    Returns no edges — metadata only.
+    """
+    # Build typedef map from symbol_table
+    typedef_map = getattr(symbol_table, '_typedefs', {})
+
+    def _resolve_type(decl_node):
+        """Extract struct type name from a declaration node."""
+        for c in decl_node.children:
+            if c.type == 'struct_specifier':
+                for cc in c.children:
+                    if cc.type == 'type_identifier' and cc.text:
+                        return cc.text.decode('utf-8')
+            if c.type == 'type_identifier' and c.text:
+                type_name = c.text.decode('utf-8')
+                resolved = typedef_map.get(type_name)
+                if resolved:
+                    return resolved
+                return type_name
+        return None
+
+    def _scan(node):
+        if node.type == 'declaration':
+            type_name = _resolve_type(node)
+            if type_name:
+                for c in node.children:
+                    if c.type == 'init_declarator':
+                        declarator = c.child_by_field_name('declarator')
+                        if declarator:
+                            var_name = extract_identifier_from_declarator(declarator)
+                            if var_name:
+                                symbol_table.record_var_type(var_name, type_name)
+        for child in node.children:
+            _scan(child)
+    _scan(tree.root_node)
+
+
 def analyze(
     tree: ts.Tree,
     filepath: str,

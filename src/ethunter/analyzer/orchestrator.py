@@ -79,6 +79,10 @@ def run_all_analyses(
     for filepath, tree in trees.items():
         param_assign.register_phase(tree, filepath, symbol_table, engine)
 
+    # Phase 1a (cont'd): collect struct variable types BEFORE field assignments
+    for filepath, tree in trees.items():
+        initializer_assign.collect_var_types(tree, filepath, symbol_table, engine)
+
     # Phase 1a*: field_call Pass 1 — ALL files (collect struct field assignments)
     for filepath, tree in trees.items():
         field_call.collect(tree, filepath, engine, symbol_table, symbol_names)
