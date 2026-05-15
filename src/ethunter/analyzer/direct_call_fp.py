@@ -33,6 +33,18 @@ def analyze(
 
         Returns (targets, confidence, evidence).
         """
+        if hasattr(dataflow, 'resolve_variable'):
+            targets = dataflow.resolve_variable(var_name, caller_func, local_fp_mapping=local_mapping)
+            if targets:
+                if caller_func:
+                    confidence, evidence = Confidence.HIGH, Evidence('scoped_fp', source='scoped_store')
+                else:
+                    confidence, evidence = Confidence.MEDIUM, Evidence('flat_fp', source='dataflow')
+            else:
+                confidence, evidence = Confidence.MEDIUM, Evidence('flat_fp', source='dataflow')
+            return targets, confidence, evidence
+
+        # Backward compat: bare VariableState
         targets = set()
         confidence, evidence = Confidence.MEDIUM, Evidence('flat_fp', source='dataflow')
         if caller_func:

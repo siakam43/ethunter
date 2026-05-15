@@ -419,7 +419,7 @@ def analyze(
                                         k.startswith(f'<gstruct:{arg_name}.') and bool(v)
                                         for k, v in dataflow.targets.items()
                                     )
-                                    has_garray = bool(dataflow.resolve(f'<garray:{arg_name}>'))
+                                    has_garray = bool((dataflow.resolve_global_array(arg_name) if hasattr(dataflow, 'resolve_global_array') else dataflow.resolve(f'<garray:{arg_name}>')))
                                     if (has_gstruct or has_garray) and arg_idx < len(param_names):
                                         pname = param_names[arg_idx]
                                         if not hasattr(dataflow, 'param_alias_map'):

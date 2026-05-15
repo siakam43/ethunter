@@ -32,17 +32,17 @@ def analyze(
                 arr_node = func_node.children[0] if func_node.children else None
                 if arr_node and arr_node.text:
                     arr_name = arr_node.text.decode('utf-8')
-                    # Phase A: try ScopedStore first
-                    targets = set()
-                    if hasattr(dataflow, 'store'):
-                        targets = dataflow.store.resolve_global_array(arr_name)
-                    # Fallback: old dataflow
-                    if not targets:
-                        targets = dataflow.resolve(f'<garray:{arr_name}>')
-                    if not targets:
-                        targets = dataflow.resolve(arr_name)
-                    if not targets:
-                        targets = dataflow.resolve('<initializer>')
+                    if hasattr(dataflow, 'resolve_global_array'):
+                        targets = dataflow.resolve_global_array(arr_name)
+                    else:
+                        # Backward compat: bare VariableState
+                        targets = dataflow.store.resolve_global_array(arr_name) if hasattr(dataflow, 'store') else set()
+                        if not targets:
+                            targets = dataflow.resolve(f'<garray:{arr_name}>')
+                        if not targets:
+                            targets = dataflow.resolve(arr_name)
+                        if not targets:
+                            targets = dataflow.resolve('<initializer>')
 
                     for target in targets:
                         edges.append(CallEdge(

@@ -99,7 +99,7 @@ class DataflowEngine:
                          local_fp_mapping: dict | None = None) -> set[str]:
         """Resolve a variable name to function targets.
 
-        Priority: func-scoped > global > local_fp_mapping.
+        Priority: func-scoped > global > any-scope > local_fp_mapping.
         """
         if caller_func:
             targets = self.store.resolve_func_var(caller_func, var_name)
@@ -111,6 +111,10 @@ class DataflowEngine:
         targets = self.store.resolve_func_var('<global>', var_name)
         if targets:
             return targets
+        # Fallback: scan all func_vars for bare-key match
+        for (func, var), vals in self.store.func_vars.items():
+            if var == var_name and vals:
+                return vals
         if local_fp_mapping:
             targets = local_fp_mapping.get(var_name, set())
             if targets:
