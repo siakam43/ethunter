@@ -79,10 +79,20 @@ class DataflowEngine:
     # Per-call-site targets (Phase 1 → Phase 2 handoff)
     call_site_targets: dict = field(default_factory=dict)
 
+    # Param binding storage: (call_name, param_name) -> {targets}
+    _param_bindings: dict[tuple[str, str], set[str]] = field(default_factory=dict)
+
     # NOTE: func_fp_params and param_usage remain on dataflow.state (VariableState)
     # during migration. They will be promoted to engine level in Task 2 when
     # param_helpers.prepare() takes ownership and old hasattr fallback chains
     # in param_assign are removed.
+
+    def add_param_binding(self, call_name: str, param_name: str, target: str) -> None:
+        """Register a call-site param binding. Replaces dataflow.assign('fn:param', target)."""
+        key = (call_name, param_name)
+        if key not in self._param_bindings:
+            self._param_bindings[key] = set()
+        self._param_bindings[key].add(target)
 
     # === Backward compatible interface ===
 
