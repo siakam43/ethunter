@@ -123,7 +123,20 @@ def _parse_evidence(s: str) -> Evidence | None:
     return Evidence(method=method, tier=tier, source=source)
 ```
 
-### 1.3 `src/ethunter/analyzer/orchestrator.py` 改动
+### 1.3 `src/ethunter/graph/model.py` — `CallGraph.from_dict` 适配
+
+`CallGraph.from_dict()`（当前 line 100-117）直接构造 `CallEdge` 并传字符串 `confidence`/`evidence`。改为使用 `CallEdge.from_dict()` 委派：
+
+```python
+# CallGraph.from_dict — 替换 CallEdge 构造部分
+for ed in d.get("edges", []):
+    edge = CallEdge.from_dict(ed)
+    graph.add_edge(edge)
+```
+
+这样 confidence/evidence 的类型转换逻辑集中在 `CallEdge.from_dict` 一处，避免重复。
+
+### 1.4 `src/ethunter/analyzer/orchestrator.py` 改动
 
 去重逻辑改为使用 `Confidence.ordinal()`：
 
@@ -146,7 +159,7 @@ def _dedup_edges(edges: list[CallEdge]) -> list[CallEdge]:
 
 移除旧常量 `_confidence_rank`。
 
-### 1.4 各模块置信度赋值表
+### 1.5 各模块置信度赋值表
 
 | 模块 | 检测路径 | confidence | evidence |
 |------|---------|-----------|----------|
@@ -169,7 +182,9 @@ def _dedup_edges(edges: list[CallEdge]) -> list[CallEdge]:
 | dlsym_fp | string literal match | LOW | `Evidence('dlsym_string_match')` |
 | param_assign (legacy) | all passes | MEDIUM | `Evidence('legacy_param_assign')` |
 
-### 1.5 验证标准
+注：`array_call` 从当前 `'high'` 降为 `MEDIUM`——它解析的是间接 dataflow key，非 AST 直接确认，与 `field_resolver` same-file suffix 属于同一可靠性级别。
+
+### 1.6 验证标准
 
 - 所有 et_bench 测试通过（60 tests）
 - 新增 `test_confidence_round_trip`: `to_dict()` → `from_dict()` 无信息丢失
@@ -188,84 +203,123 @@ def _dedup_edges(edges: list[CallEdge]) -> list[CallEdge]:
 
 #### 2.2.1 扩展 `_collect_local_var_types()` 覆盖非指针声明
 
-`_collect_local_var_types()` 当前只匹配 `pointer_declarator` 模式。新增 non-pointer 路径——`field_identifier` 和 `identifier` 作为 declarator 的直接子节点，或作为 `init_declarator` 的一部分：
+`_collect_local_var_types()`（`field_call.py:84-129`）当前只匹配 `pointer_declarator` 子节点。扩展现有的递归 `_scan(node, current_func)` 模式，在 `declaration` 分支中增加 non-pointer 变量名提取：
+
+当前逻辑（仅指针路径）：
+```python
+if node.type == 'declaration' and current_func:
+    type_name = None
+    var_name = None
+    for c in node.children:
+        if c.type == 'type_identifier' and c.text:
+            type_name = c.text.decode('utf-8')
+        elif c.type == 'struct_specifier':
+            for sc in c.children:
+                if sc.type == 'type_identifier' and sc.text:
+                    type_name = sc.text.decode('utf-8'); break
+        elif c.type == 'pointer_declarator':
+            for pc in c.children:
+                if pc.type == 'identifier' and pc.text:
+                    var_name = pc.text.decode('utf-8'); break
+    if type_name and var_name:
+        symbol_table.record_func_var_type(current_func, var_name, type_name)
+```
+
+扩展后：在已有的 `pointer_declarator` 路径之后，新增对非指针声明和 `init_declarator` 的变量名提取。使用已有 helper `extract_identifier_from_declarator` 复用声明器解析逻辑：
+
+在 `declaration` 处理的 `for c in node.children` 循环中，于已有 `pointer_declarator` 分支的 `elif` 后追加：
 
 ```python
-def _collect_local_var_types(self, root, func_name, symbol_table):
-    for node in _walk_children(root, 'declaration'):
-        type_node = node.child_by_field_name('type')
-        if type_node is None:
-            continue
-        declarator = node.child_by_field_name('declarator')
-        if declarator is None:
-            continue
-
-        var_name = None
-        # 已有路径：pointer_declarator 如 "struct foo *ptr"
-        ptr = declarator.child_by_field_name('declarator')
-        if ptr and ptr.type == 'pointer_declarator':
-            var_name = _extract_identifier(ptr)
-        # NEW：非指针声明 如 "struct foo var" 或 "foo_t var"
-        if var_name is None:
-            for child in declarator.children:
-                if child.type in ('field_identifier', 'identifier'):
-                    var_name = child.text.decode()
-                    break
-        # NEW：init_declarator 如 "foo_t var = ..."
-        if var_name is None:
-            for child in declarator.children:
-                if child.type == 'init_declarator':
-                    id_node = _find_node(child, 'identifier')
-                    if id_node:
-                        var_name = id_node.text.decode()
-                    break
-
-        if var_name is None:
-            continue
-
-        type_name = _extract_type_name(type_node, symbol_table)
-        if type_name:
-            symbol_table.record_func_var_type(func_name, var_name, type_name)
+# NEW：处理 declarator 为 init_declarator 的情况（如 "struct foo var = {...}"）
+# init_declarator 本身作为 declaration 的 declarator 字段出现
+elif c.type == 'init_declarator':
+    inner_decl = c.child_by_field_name('declarator')
+    if inner_decl:
+        from ethunter.analyzer.helpers import extract_identifier_from_declarator
+        var_name = extract_identifier_from_declarator(inner_decl)
+# NEW：处理 field_identifier / identifier 作为声明直接子节点（非指针声明）
+elif c.type in ('field_identifier', 'identifier') and c.text:
+    var_name = c.text.decode('utf-8')
 ```
+
+注意：当声明包含 `init_declarator` 时（如 `foo_t var = expr`），`declaration` 节点的 `declarator` 字段直接指向 `init_declarator`，因此需要在 `declaration.children` 中匹配 `init_declarator` 类型。从 `init_declarator` 中通过 `child_by_field_name('declarator')` 获取内部的 identifier/pointer_declarator，再用 `extract_identifier_from_declarator` 提取变量名。
+
+类型名提取逻辑（`type_identifier` / `struct_specifier`）不需要改动——已在循环中覆盖。
 
 ### 2.3 `src/ethunter/analyzer/param_helpers.py` 改动
 
 #### 2.3.1 扩展 `_collect_param_types()` 覆盖函数声明
 
-当前只遍历 `function_definition`。新增 `declaration` 节点中带 `function_declarator` 的函数声明：
+`_collect_param_types()`（`param_helpers.py:357-406`）是模块级函数，当前通过递归 `_scan()` 仅遍历 `function_definition` 节点。新增对 `declaration` 节点中带 `function_declarator` 的函数声明的处理：
+
+在现有 `_scan()` 内部（`param_helpers.py:363`），于 `if node.type == 'function_definition':` 块之后新增 `elif` 分支：
 
 ```python
-for node in root.children:
-    if node.type == 'function_definition':
-        func_name = self._get_func_name_from_def(node)
-        if func_name:
-            self._record_param_types(node, func_name, symbol_table)
-    elif node.type == 'declaration':
-        decl = node.child_by_field_name('declarator')
-        if decl and decl.type == 'function_declarator':
-            func_name = self._get_func_name_from_declarator(decl)
-            if func_name:
-                self._record_param_types(node, func_name, symbol_table)
+elif node.type == 'declaration':
+    decl = _find_child(node, 'function_declarator')
+    if decl:
+        fname, inner_decl = _find_func_name_from_decl(decl)
+        if fname:
+            plist = _find_child(inner_decl, 'parameter_list')
+            if plist:
+                for p in plist.children:
+                    if p.type == 'parameter_declaration':
+                        pname = _extract_param_name(p)
+                        if not pname:
+                            continue
+                        for tc in p.children:
+                            if tc.type == 'type_identifier' and tc.text:
+                                type_name = tc.text.decode('utf-8')
+                                symbol_table.record_func_var_type(fname, pname, type_name)
+                                break
+                            if tc.type == 'struct_specifier':
+                                for sc in tc.children:
+                                    if sc.type == 'type_identifier' and sc.text:
+                                        type_name = sc.text.decode('utf-8')
+                                        symbol_table.record_func_var_type(fname, pname, type_name)
+                                        break
 ```
+
+逻辑与现有 `function_definition` 分支完全相同——通过 `_find_func_name_from_decl`（已在 `param_helpers.py` 中定义）提取函数名，通过 `_find_child` 和 `_extract_param_name`（已有 helper）获取参数名，从 `type_identifier` / `struct_specifier` 提取类型名。
 
 #### 2.3.2 新增 `_collect_return_types()`
 
-扫描函数定义和声明，记录返回 struct 指针的函数名：
+新增模块级函数，使用与现有 `_collect_param_types()` 相同的递归 `_scan()` 模式，扫描函数定义和声明，记录返回 struct 指针的函数名：
+
+在 `param_helpers.py` 中新增：
 
 ```python
-def _collect_return_types(self, root, symbol_table):
-    for node_type in ('function_definition', 'declaration'):
-        for node in _walk_children(root, node_type):
-            type_node = node.child_by_field_name('type')
-            func_declarator = node.child_by_field_name('declarator')
-            if type_node is None or func_declarator is None:
-                continue
-            func_name = _extract_func_name(func_declarator)
-            if func_name is None:
-                continue
-            ret_type = _extract_struct_type(type_node, symbol_table)
-            if ret_type:
-                symbol_table.record_func_return_type(func_name, ret_type)
+def _collect_return_types(root_node, symbol_table) -> None:
+    """Record struct pointer return types for functions.
+    
+    For 'struct type *func(...)', records func_name -> 'type' in symbol_table.
+    """
+    def _scan(node):
+        if node.type in ('function_definition', 'declaration'):
+            type_node = _find_child(node, 'type')
+            decl = _find_child(node, 'function_declarator')
+            if type_node and decl:
+                fname, _ = _find_func_name_from_decl(decl)
+                if fname:
+                    # Check for struct_specifier or type_identifier in type_node
+                    for tc in type_node.children:
+                        if tc.type == 'type_identifier' and tc.text:
+                            symbol_table.record_func_return_type(fname, tc.text.decode('utf-8'))
+                            break
+                        if tc.type == 'struct_specifier':
+                            for sc in tc.children:
+                                if sc.type == 'type_identifier' and sc.text:
+                                    symbol_table.record_func_return_type(fname, sc.text.decode('utf-8'))
+                                    break
+        for child in node.children:
+            _scan(child)
+    _scan(root_node)
+```
+
+调用点：在 `prepare()` 末尾（`param_helpers.py:354`），`_collect_param_types()` 调用后新增：
+```python
+if symbol_table is not None:
+    _collect_return_types(tree.root_node, symbol_table)
 ```
 
 ### 2.4 `src/ethunter/analyzer/symbol_table.py` 改动
@@ -363,12 +417,16 @@ def resolve_field_call(self, field_path, base_var, caller_func, filepath):
 ```python
 targets, confidence, evidence = resolver.resolve_field_call(...)
 if confidence is not None:
-    # FieldResolver 给出了答案（包括确信地返回空集）
-    has_resolved = True
+    # FieldResolver 给出了答案（targets 可能为空集——类型已知但 key 未命中）
+    # 直接使用返回的 targets，不进入 legacy fallback
+    pass  # 跳过 legacy 回退
 else:
-    # FieldResolver 未匹配任何 strategy，使用 legacy fallback
-    has_resolved = False
+    # FieldResolver 所有 tier 均未匹配（类型未知 + suffix 也失败）
+    # 使用 legacy fallback（<gstruct:>, <struct:>, dataflow 后缀扫描）
+    targets = _resolve_via_legacy_fallback(field_path, ...)
 ```
+
+注意：当 `confidence is not None` 但 targets 为空时（类型已知 + Tier 1 未命中），应直接生成**零条边**——这是 field_resolver 的明确结论，不应交由 legacy fallback 补充。
 
 ### 3.3 修复未追踪写入
 
@@ -391,7 +449,15 @@ def resolve_call_site_param(self, func_name, param_idx, arg_name,
     self.store.assign_struct_field(key, targets, filepath=filepath)
 ```
 
-调用方 `param_binding._resolve_fields()` 传入已有的 `filepath` 参数。
+调用方 `_propagate_call_site()`（`param_binding.py:16-23`）从 `analyze()` 接收 `filepath` 并传递给 `resolve_call_site_param()`：
+```python
+# _propagate_call_site 扩展签名
+def _propagate_call_site(call_name, arg_idx, target, dataflow, symbol_names, filepath=''):
+    dataflow.resolve_call_site_param(
+        call_name, arg_idx, target, symbol_names=symbol_names, filepath=filepath
+    )
+```
+在 `analyze()` 的 4 个参数处理分支中，`_propagate_call_site(...)` 调用均增加 `filepath=filepath` 参数。
 
 ### 3.4 验证标准
 
@@ -400,6 +466,7 @@ def resolve_call_site_param(self, func_name, param_idx, arg_name,
 - 新增 `test_unresolvable_struct_type_proceeds_to_suffix`: 类型未知时仍执行 suffix 扫描
 - 新增 `test_struct_field_file_tracking`: 所有 `assign_struct_field` 调用传入有效 filepath
 - 指标：field_call 误报从 ~158 → ~20
+- `resolve_with_evidence()`（`field_resolver.py:220-228`）返回的是 `(targets, strategy_class_name)`——其中 strategy_class_name 是匹配策略的类名（如 `"TypeAwareStructLookup"`），用于调试而非置信度判定。**不修改此方法**——它与 `resolve_field_call()` 的语义不同
 
 ---
 
@@ -411,13 +478,13 @@ def resolve_call_site_param(self, func_name, param_idx, arg_name,
 
 ### 4.2 `src/ethunter/analyzer/param_binding.py` 改动
 
-在 `analyze()` 中注册 registration site 之前增加 `param_usage` 预过滤，对齐旧模块行为：
+在 `analyze()` 的 `_collect_call_params()` 中，有 4 个参数处理分支会将 target 添加到 `registration_sites[]`：`identifier` 实参（line 79）、`cast_expression` 实参（line 144）、`pointer_expression` 实参（line 173）、以及 dataflow 回退路径。在每个分支的 `dataflow.registration_sites.append(...)` 之前增加 `param_usage` 预过滤：
 
 ```python
-# 在添加到 registration_sites 之前
+# 在每个分支的 is_reg 判断为 True 后、registration_sites.append 之前：
 usage = dataflow.state.param_usage.get((call_name, arg_idx), 'unknown')
 if usage in ('forwarder', 'storage'):
-    continue  # 不注册 forwarder/storage 角色的参数
+    continue  # 与旧模块行为对齐：不注册 forwarder/storage 参数
 ```
 
 ### 4.3 `src/ethunter/analyzer/orchestrator.py` 改动
@@ -467,22 +534,35 @@ def test_new_modules_equivalent_to_old():
 
 ### 5.2 `src/ethunter/analyzer/param_helpers.py` 改动
 
-`_collect_func_params()` 扩展到 `declaration` 节点：
+`_collect_func_params()`（`param_helpers.py:156-188`）是模块级递归函数。当前仅在 `node.type == 'function_definition'` 时处理。在现有递归逻辑中新增对 `declaration` 节点的处理：
+
+在 `_collect_func_params()` 的函数体中，于 `if node.type == 'function_definition':` 块之后新增：
 
 ```python
-def _collect_func_params(self, root, func_params, func_fp_params, symbol_table):
-    for node in root.children:
-        if node.type == 'function_definition':
-            self._collect_from_def(node, func_params, func_fp_params, symbol_table)
-        elif node.type == 'declaration':
-            decl = node.child_by_field_name('declarator')
-            if decl and decl.type == 'function_declarator':
-                self._collect_from_decl(node, func_params, func_fp_params, symbol_table)
+elif node.type == 'declaration':
+    decl = _find_child(node, 'function_declarator')
+    if decl:
+        fname, inner_decl = _find_func_name_from_decl(decl)
+        if fname:
+            params = []
+            fp_positions = set()
+            plist = _find_child(inner_decl, 'parameter_list')
+            if plist:
+                pos = 0
+                for p in plist.children:
+                    if p.type == 'parameter_declaration':
+                        pname = _extract_param_name(p)
+                        if pname:
+                            params.append(pname)
+                            if func_fp_params is not None and _has_fnptr_declarator(p, fnptr_typedefs):
+                                fp_positions.add(pos)
+                            pos += 1
+            func_params[fname] = params
+            if func_fp_params is not None and fp_positions:
+                func_fp_params[fname] = fp_positions
 ```
 
-`_collect_from_decl()` 复用与 `_collect_from_def()` 相同的 fp 参数检测逻辑：
-- 检查 `parameter_list` 中每个参数的 `function_declarator` 嵌套（直接 fnptr 语法）
-- 检查每个参数的 `type_identifier` 是否匹配已知 fnptr typedef
+此分支逻辑与现有 `function_definition` 分支完全相同——通过 `_find_func_name_from_decl` 提取函数名，通过 `_extract_param_name` 和 `_has_fnptr_declarator` 检测 fnptr 参数。
 
 ### 5.3 `src/ethunter/analyzer/callback_reg.py` 改动
 
@@ -497,6 +577,8 @@ if usage == 'unknown':
 ```
 
 注意：`_is_registration()` 函数保留但不被 callback_reg 调用。Remaining call site in `param_binding`（已由改动 5.2 大幅减少了 `func_fp_params` 缺失的情况）。
+
+**风险控制**：添加日志记录所有被跳过的 registration（callee 不在 func_params 且不在 func_fp_params 中）。若 et_bench 召回率回落，说明有 callee 仅在系统头文件中声明——此时对特定缺失模式，应在头文件中也扫描声明，而非回退到名称匹配。
 
 ### 5.4 `src/ethunter/analyzer/param_binding.py` 改动
 
