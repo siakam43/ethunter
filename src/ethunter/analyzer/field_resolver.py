@@ -220,26 +220,26 @@ class FieldResolver:
                     if targets:
                         return targets, Confidence.HIGH, Evidence('chain_resolve_exact', tier=2)
 
-        # === Type gate: known type + chain miss → skip suffix ===
-        if struct_type:
-            return set(), None, None
-
-        # === Tier 3: Same-file scoped suffix ===
-        suffix = f'.{field_tail}'
-        for key, vals in self._store.struct_fields.items():
-            if not key.endswith(suffix):
-                continue
-            files = self._store.struct_field_files.get(key)
-            if files and filepath not in files:
-                continue
-            targets.update(vals)
+        # === Tier 3: Progressive same-file suffix ===
+        parts = field_path.split('.')
+        for i in range(1, len(parts)):
+            sfx = '.'.join(parts[i:])
+            for key, vals in self._store.struct_fields.items():
+                if not key.endswith(sfx):
+                    continue
+                files = self._store.struct_field_files.get(key)
+                if files and filepath not in files:
+                    continue
+                targets.update(vals)
         if targets:
             return targets, Confidence.MEDIUM, Evidence('same_file_suffix', tier=3)
 
-        # === Tier 4: Cross-file suffix ===
-        for key, vals in self._store.struct_fields.items():
-            if key.endswith(suffix):
-                targets.update(vals)
+        # === Tier 4: Progressive cross-file suffix ===
+        for i in range(1, len(parts)):
+            sfx = '.'.join(parts[i:])
+            for key, vals in self._store.struct_fields.items():
+                if key.endswith(sfx):
+                    targets.update(vals)
         if targets:
             return targets, Confidence.LOW, Evidence('cross_file_suffix', tier=4)
 
