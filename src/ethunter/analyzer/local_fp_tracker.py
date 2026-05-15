@@ -76,20 +76,25 @@ def collect_local_fp_assignments(
         field_path = extract_field_path(field_expr)
         if not field_path:
             return
-        targets = set()
         base_var = field_path.split('.')[0]
-        # Try type-aware key first if symbol_table available
-        if symbol_table:
-            struct_type = symbol_table.get_var_type(base_var)
-            if struct_type:
-                targets = dataflow.resolve(f'<gstruct>:{struct_type}.{field_path}>')
-        # Fall back to old format keys
-        if not targets:
-            targets = dataflow.resolve(f'<gstruct:{field_path}>')
-        if not targets:
-            targets = dataflow.resolve(f'<struct:{field_path}>')
-        if not targets:
-            targets = dataflow.resolve(f'<chain:{field_path}>')
+        if hasattr(dataflow, 'resolve_struct_field_call'):
+            targets, _, _ = dataflow.resolve_struct_field_call(
+                field_path, base_var, None, '',
+                symbol_table=symbol_table,
+            )
+        else:
+            # Backward compat: bare VariableState (used in tests)
+            targets = set()
+            if symbol_table:
+                struct_type = symbol_table.get_var_type(base_var)
+                if struct_type:
+                    targets = dataflow.resolve(f'<gstruct>:{struct_type}.{field_path}>')
+            if not targets:
+                targets = dataflow.resolve(f'<gstruct:{field_path}>')
+            if not targets:
+                targets = dataflow.resolve(f'<struct:{field_path}>')
+            if not targets:
+                targets = dataflow.resolve(f'<chain:{field_path}>')
         if targets:
             if var_name not in mapping:
                 mapping[var_name] = set()

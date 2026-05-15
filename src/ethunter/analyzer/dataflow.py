@@ -6,6 +6,19 @@ from dataclasses import dataclass, field
 from ethunter.analyzer.scoped_store import ScopedStore
 
 
+class _NilSymbolTableType:
+    """Null object for symbol_table when not available."""
+    def get_func_var_type(self, *args, **kwargs): return None
+    def get_var_type(self, *args, **kwargs): return None
+    def get_struct_fields(self, *args, **kwargs): return []
+    def record_struct_fields(self, *args, **kwargs): pass
+    def record_var_type(self, *args, **kwargs): pass
+    def record_func_var_type(self, *args, **kwargs): pass
+
+
+_NilSymbolTable = _NilSymbolTableType()
+
+
 @dataclass
 class VariableState:
     """Tracks possible function targets for each variable across the codebase."""
@@ -120,6 +133,9 @@ class DataflowEngine:
         """
         from ethunter.analyzer.field_resolver import FieldResolver
         from ethunter.graph.model import Confidence, Evidence
+
+        if symbol_table is None:
+            symbol_table = _NilSymbolTable
 
         resolver = FieldResolver(
             store=self.store,
