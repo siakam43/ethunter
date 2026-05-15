@@ -90,7 +90,10 @@ def analyze(
                                         })
                                     if arg_idx < len(param_names):
                                         pname = param_names[arg_idx]
-                                        dataflow.add_param_binding(call_name, pname, target)
+                                        if hasattr(dataflow, 'add_param_binding'):
+                                            dataflow.add_param_binding(call_name, pname, target)
+                                        else:
+                                            dataflow.assign(f'{call_name}:{pname}', target)
                                         dataflow.store.assign_func_var(call_name, pname, target)
                                 else:
                                     if arg_idx < len(param_names):
@@ -98,7 +101,10 @@ def analyze(
                                         if pname not in param_mappings:
                                             param_mappings[pname] = set()
                                         param_mappings[pname].add(target)
-                                        dataflow.add_param_binding(call_name, pname, target)
+                                        if hasattr(dataflow, 'add_param_binding'):
+                                            dataflow.add_param_binding(call_name, pname, target)
+                                        else:
+                                            dataflow.assign(f'{call_name}:{pname}', target)
                                         dataflow.store.assign_func_var(call_name, pname, target)
                                         cs_key = (caller or '<unknown>', call_name, arg_idx)
                                         if cs_key not in call_site_targets:
@@ -117,7 +123,10 @@ def analyze(
                                         param_mappings[pname] = set()
                                     param_mappings[pname].update(df_targets)
                                     for t in df_targets:
-                                        dataflow.add_param_binding(call_name, pname, t)
+                                        if hasattr(dataflow, 'add_param_binding'):
+                                            dataflow.add_param_binding(call_name, pname, t)
+                                        else:
+                                            dataflow.assign(f'{call_name}:{pname}', t)
                                         dataflow.store.assign_func_var(call_name, pname, t)
                                     cs_key = (caller or '<unknown>', call_name, arg_idx)
                                     if cs_key not in call_site_targets:
@@ -189,7 +198,10 @@ def analyze(
                                         if pname not in param_mappings:
                                             param_mappings[pname] = set()
                                         param_mappings[pname].add(target)
-                                        dataflow.add_param_binding(call_name, pname, target)
+                                        if hasattr(dataflow, 'add_param_binding'):
+                                            dataflow.add_param_binding(call_name, pname, target)
+                                        else:
+                                            dataflow.assign(f'{call_name}:{pname}', target)
                                         dataflow.store.assign_func_var(call_name, pname, target)
                                         cs_key = (caller or '<unknown>', call_name, arg_idx)
                                         if cs_key not in call_site_targets:
@@ -236,6 +248,7 @@ def _resolve_fields(tree: ts.Tree, filepath: str, symbol_table, dataflow) -> Non
                 func_name = call_func.text.decode('utf-8')
                 ret_targets = dataflow.resolve_returned_field(func_name)
                 for t in ret_targets:
+                    dataflow.assign(f'<gstruct:{field_path}>', t)
                     if hasattr(dataflow, 'store'):
                         dataflow.store.assign_struct_field(f'gstruct:{base_var}.{field_tail}', t, filepath)
                         struct_type = symbol_table.get_func_var_type(fa.enclosing_func, base_var)
@@ -245,6 +258,7 @@ def _resolve_fields(tree: ts.Tree, filepath: str, symbol_table, dataflow) -> Non
             param_name = fa.resolved_value
             targets = param_mappings.get(param_name, set())
             for t in targets:
+                dataflow.assign(f'<struct:{field_path}>', t)
                 if hasattr(dataflow, 'store'):
                     dataflow.store.assign_struct_field(f'gstruct:{base_var}.{field_tail}', t, filepath)
                     struct_type = symbol_table.get_func_var_type(fa.enclosing_func, base_var)
@@ -261,6 +275,8 @@ def _resolve_fields(tree: ts.Tree, filepath: str, symbol_table, dataflow) -> Non
                 if not df_targets:
                     df_targets = dataflow.resolve(f'<garray:{param_name}>')
             for t in df_targets:
+                dataflow.assign(f'<struct:{field_path}>', t)
+                dataflow.assign(f'<struct:{field_name}>', t)
                 if hasattr(dataflow, 'store'):
                     dataflow.store.assign_struct_field(f'gstruct:{base_var}.{field_tail}', t, filepath)
                     if field_name != field_tail:

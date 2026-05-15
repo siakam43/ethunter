@@ -545,16 +545,20 @@ def analyze(
                                             ))
                                     if arg_idx < len(param_names):
                                         pname = param_names[arg_idx]
-                                        dataflow.assign(f'{call_name}:{pname}', target)
-                                        dataflow.assign(pname, target)
+                                        if hasattr(dataflow, 'add_param_binding'):
+                                            dataflow.add_param_binding(call_name, pname, target)
+                                        else:
+                                            dataflow.assign(f'{call_name}:{pname}', target)
                                 else:
                                     if arg_idx < len(param_names):
                                         pname = param_names[arg_idx]
                                         if pname not in param_mappings:
                                             param_mappings[pname] = set()
                                         param_mappings[pname].add(target)
-                                        dataflow.assign(f'{call_name}:{pname}', target)
-                                        dataflow.assign(pname, target)
+                                        if hasattr(dataflow, 'add_param_binding'):
+                                            dataflow.add_param_binding(call_name, pname, target)
+                                        else:
+                                            dataflow.assign(f'{call_name}:{pname}', target)
                                         # Per-call-site tracking (P0)
                                         cs_key = (caller or '<unknown>', call_name, arg_idx)
                                         if cs_key not in call_site_targets:
@@ -654,8 +658,10 @@ def analyze(
                                         if pname not in param_mappings:
                                             param_mappings[pname] = set()
                                         param_mappings[pname].add(target)
-                                        dataflow.assign(f'{call_name}:{pname}', target)
-                                        dataflow.assign(pname, target)
+                                        if hasattr(dataflow, 'add_param_binding'):
+                                            dataflow.add_param_binding(call_name, pname, target)
+                                        else:
+                                            dataflow.assign(f'{call_name}:{pname}', target)
                                         # Per-call-site tracking (P0)
                                         cs_key = (caller or '<unknown>', call_name, arg_idx)
                                         if cs_key not in call_site_targets:

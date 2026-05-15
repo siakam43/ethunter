@@ -93,6 +93,8 @@ class DataflowEngine:
         if key not in self._param_bindings:
             self._param_bindings[key] = set()
         self._param_bindings[key].add(target)
+        # Backward compat: also write to old store for tests that read it directly
+        self.state.assign(f'{call_name}:{param_name}', target)
 
     # === Backward compatible interface ===
 
