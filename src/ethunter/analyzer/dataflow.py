@@ -82,6 +82,68 @@ class DataflowEngine:
     def merge(self, src_var: str, dst_var: str) -> None:
         self.state.merge(src_var, dst_var)
 
+    def resolve_variable(self, var_name: str, caller_func: str | None = None,
+                         local_fp_mapping: dict | None = None) -> set[str]:
+        """Resolve a variable name to function targets.
+
+        Priority: func-scoped > global > local_fp_mapping.
+        """
+        if caller_func:
+            targets = self.store.resolve_func_var(caller_func, var_name)
+            if targets:
+                return targets
+            targets = self.store.resolve_func_var('<global>', var_name)
+            if targets:
+                return targets
+        targets = self.store.resolve_func_var('<global>', var_name)
+        if targets:
+            return targets
+        if local_fp_mapping:
+            targets = local_fp_mapping.get(var_name, set())
+            if targets:
+                return targets
+        return set()
+
+    def resolve_global_array(self, name: str) -> set[str]:
+        """Resolve a global function pointer array name to targets."""
+        return self.store.resolve_global_array(name)
+
+    def resolve_struct_field_call(self, field_path: str, base_var: str,
+                                  caller_func: str | None, filepath: str,
+                                  symbol_table, local_fp_mapping: dict | None = None,
+                                  pointer_resolutions: dict | None = None) \
+            -> tuple[set[str], 'Confidence | None', 'Evidence | None']:
+        """Resolve a struct field function pointer call.
+
+        Uses FieldResolver 4-tier chain + garray fallback.
+        All backed by ScopedStore — no old-store dependency.
+        """
+        from ethunter.analyzer.field_resolver import FieldResolver
+        from ethunter.graph.model import Confidence, Evidence
+
+        resolver = FieldResolver(
+            store=self.store,
+            dataflow=self,
+            symbol_table=symbol_table,
+            local_fp_mapping=local_fp_mapping or {},
+            pointer_resolutions=pointer_resolutions or {},
+        )
+        targets, confidence, evidence = resolver.resolve_field_call(
+            field_path, base_var, caller_func, filepath)
+        garray_targets = self.store.resolve_global_array(base_var)
+        if garray_targets:
+            targets.update(garray_targets)
+            if confidence is None:
+                confidence, evidence = Confidence.LOW, Evidence('garray_fallback')
+        return targets, confidence, evidence
+
+    def rebuild_param_mappings(self) -> dict[str, set[str]]:
+        """Rebuild param_name -> {targets} mapping from func_vars."""
+        result: dict[str, set[str]] = {}
+        for (func, var), vals in self.store.func_vars.items():
+            result.setdefault(var, set()).update(vals)
+        return result
+
     @property
     def targets(self) -> dict[str, set[str]]:
         return self.state.targets
