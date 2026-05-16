@@ -10,7 +10,7 @@ import pytest
 
 from ethunter.parser.ast_builder import parse_file
 from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
-from ethunter.analyzer.dataflow import VariableState, DataflowEngine
+from ethunter.analyzer.dataflow import DataflowEngine
 from ethunter.analyzer.orchestrator import run_all_analyses
 
 ET_BENCH_DIR = os.path.join(os.path.dirname(__file__), 'benchmark', 'et_bench')
@@ -20,7 +20,7 @@ def _run_analysis_on_fixture(fixture_dir):
     """Run ethunter's full pipeline on a fixture directory."""
     trees = {}
     st = SymbolTable()
-    df = DataflowEngine(state=VariableState())
+    df = DataflowEngine()
 
     for root, dirs, files in os.walk(fixture_dir):
         for f in files:
@@ -281,7 +281,7 @@ void s_server_main(void) {
 
     trees = {'file_a.c': tree_a, 'file_b.c': tree_b}
     st = SymbolTable()
-    df = DataflowEngine(state=VariableState())
+    df = DataflowEngine()
     for fp in trees:
         for func in extract_functions(trees[fp], fp):
             st.add_function(func)
@@ -320,12 +320,12 @@ def test_bug0_positional_index_correctness():
 
     from ethunter.analyzer.initializer_assign import analyze as init_analyze
     from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
-    from ethunter.analyzer.dataflow import VariableState, DataflowEngine
+    from ethunter.analyzer.dataflow import DataflowEngine
 
     st = SymbolTable()
     for func in extract_functions(tree, "test.c"):
         st.add_function(func)
-    df = DataflowEngine(state=VariableState())
+    df = DataflowEngine()
 
     init_analyze(tree=tree, filepath="test.c", symbol_table=st, dataflow=df)
 
@@ -368,12 +368,12 @@ def test_bug0_array_of_structs_with_inner_init_list():
 
     from ethunter.analyzer.initializer_assign import analyze as init_analyze
     from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
-    from ethunter.analyzer.dataflow import VariableState, DataflowEngine
+    from ethunter.analyzer.dataflow import DataflowEngine
 
     st = SymbolTable()
     for func in extract_functions(tree, "test.c"):
         st.add_function(func)
-    df = DataflowEngine(state=VariableState())
+    df = DataflowEngine()
 
     init_analyze(tree=tree, filepath="test.c", symbol_table=st, dataflow=df)
 
@@ -455,13 +455,13 @@ def test_fix_b_param_alias_registration():
     tree = parser.parse(source)
 
     from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
-    from ethunter.analyzer.dataflow import VariableState, DataflowEngine, DataflowEngine
+    from ethunter.analyzer.dataflow import DataflowEngine
     from ethunter.analyzer import initializer_assign
 
     st = SymbolTable()
     for func in extract_functions(tree, "test.c"):
         st.add_function(func)
-    engine = DataflowEngine(state=VariableState())
+    engine = DataflowEngine()
 
     initializer_assign.analyze(tree=tree, filepath="test.c", symbol_table=st, dataflow=engine)
 
@@ -502,12 +502,12 @@ def test_fix_c1_pointer_expression_in_array_init():
 
     from ethunter.analyzer.initializer_assign import analyze as init_analyze
     from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
-    from ethunter.analyzer.dataflow import VariableState, DataflowEngine
+    from ethunter.analyzer.dataflow import DataflowEngine
 
     st = SymbolTable()
     for func in extract_functions(tree, "test.c"):
         st.add_function(func)
-    df = DataflowEngine(state=VariableState())
+    df = DataflowEngine()
 
     init_analyze(tree=tree, filepath="test.c", symbol_table=st, dataflow=df)
 
@@ -562,13 +562,13 @@ def test_fix_c2_call_expression_rhs_field_assign():
     tree = parser.parse(source)
 
     from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
-    from ethunter.analyzer.dataflow import VariableState, DataflowEngine
+    from ethunter.analyzer.dataflow import DataflowEngine
     from ethunter.analyzer.orchestrator import run_all_analyses
 
     st = SymbolTable()
     for func in extract_functions(tree, "test.c"):
         st.add_function(func)
-    df = DataflowEngine(state=VariableState())
+    df = DataflowEngine()
 
     graph = run_all_analyses({"test.c": tree}, st, df)
     pairs = {(e.caller, e.callee) for e in graph.edges}
@@ -595,13 +595,13 @@ def test_cast_assign_no_symbol_names_guard():
     tree = parser.parse(source)
 
     from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
-    from ethunter.analyzer.dataflow import VariableState, DataflowEngine
+    from ethunter.analyzer.dataflow import DataflowEngine
     from ethunter.analyzer.orchestrator import run_all_analyses
 
     st = SymbolTable()
     for func in extract_functions(tree, "test.c"):
         st.add_function(func)
-    df = DataflowEngine(state=VariableState())
+    df = DataflowEngine()
 
     graph = run_all_analyses({"test.c": tree}, st, df)
     pairs = {(e.caller, e.callee) for e in graph.edges if e.type.value == 'indirect'}
@@ -628,13 +628,13 @@ def test_direct_assign_no_symbol_names_guard():
     tree = parser.parse(source)
 
     from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
-    from ethunter.analyzer.dataflow import VariableState, DataflowEngine
+    from ethunter.analyzer.dataflow import DataflowEngine
     from ethunter.analyzer.orchestrator import run_all_analyses
 
     st = SymbolTable()
     for func in extract_functions(tree, "test.c"):
         st.add_function(func)
-    df = DataflowEngine(state=VariableState())
+    df = DataflowEngine()
 
     graph = run_all_analyses({"test.c": tree}, st, df)
     pairs = {(e.caller, e.callee) for e in graph.edges if e.type.value == 'indirect'}
@@ -670,13 +670,13 @@ def test_param_local_call_direct():
     tree = parser.parse(source)
 
     from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
-    from ethunter.analyzer.dataflow import VariableState, DataflowEngine
+    from ethunter.analyzer.dataflow import DataflowEngine
     from ethunter.analyzer.orchestrator import run_all_analyses
 
     st = SymbolTable()
     for func in extract_functions(tree, "test.c"):
         st.add_function(func)
-    df = DataflowEngine(state=VariableState())
+    df = DataflowEngine()
 
     graph = run_all_analyses({"test.c": tree}, st, df)
     pairs = {(e.caller, e.callee) for e in graph.edges if e.type.value == 'indirect'}
@@ -711,13 +711,13 @@ def test_param_local_call_address_of():
     tree = parser.parse(source)
 
     from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
-    from ethunter.analyzer.dataflow import VariableState, DataflowEngine
+    from ethunter.analyzer.dataflow import DataflowEngine
     from ethunter.analyzer.orchestrator import run_all_analyses
 
     st = SymbolTable()
     for func in extract_functions(tree, "test.c"):
         st.add_function(func)
-    df = DataflowEngine(state=VariableState())
+    df = DataflowEngine()
 
     graph = run_all_analyses({"test.c": tree}, st, df)
     pairs = {(e.caller, e.callee) for e in graph.edges if e.type.value == 'indirect'}
@@ -749,13 +749,13 @@ def test_param_local_var_dataflow_fallback():
     tree = parser.parse(source)
 
     from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
-    from ethunter.analyzer.dataflow import VariableState, DataflowEngine
+    from ethunter.analyzer.dataflow import DataflowEngine
     from ethunter.analyzer.orchestrator import run_all_analyses
 
     st = SymbolTable()
     for func in extract_functions(tree, "test.c"):
         st.add_function(func)
-    df = DataflowEngine(state=VariableState())
+    df = DataflowEngine()
 
     graph = run_all_analyses({"test.c": tree}, st, df)
     pairs = {(e.caller, e.callee) for e in graph.edges if e.type.value == 'indirect'}
@@ -786,13 +786,13 @@ def test_param_local_call_deref():
     tree = parser.parse(source)
 
     from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
-    from ethunter.analyzer.dataflow import VariableState, DataflowEngine
+    from ethunter.analyzer.dataflow import DataflowEngine
     from ethunter.analyzer.orchestrator import run_all_analyses
 
     st = SymbolTable()
     for func in extract_functions(tree, "test.c"):
         st.add_function(func)
-    df = DataflowEngine(state=VariableState())
+    df = DataflowEngine()
 
     graph = run_all_analyses({"test.c": tree}, st, df)
     pairs = {(e.caller, e.callee) for e in graph.edges if e.type.value == 'indirect'}
@@ -831,13 +831,13 @@ def test_param_callback_of_callback():
     tree = parser.parse(source)
 
     from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
-    from ethunter.analyzer.dataflow import VariableState, DataflowEngine
+    from ethunter.analyzer.dataflow import DataflowEngine
     from ethunter.analyzer.orchestrator import run_all_analyses
 
     st = SymbolTable()
     for func in extract_functions(tree, "test.c"):
         st.add_function(func)
-    df = DataflowEngine(state=VariableState())
+    df = DataflowEngine()
 
     graph = run_all_analyses({"test.c": tree}, st, df)
     pairs = {(e.caller, e.callee) for e in graph.edges if e.type.value == 'indirect'}
@@ -884,13 +884,13 @@ def test_fnptr_pointer_global():
     tree = parser.parse(source)
 
     from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
-    from ethunter.analyzer.dataflow import VariableState, DataflowEngine
+    from ethunter.analyzer.dataflow import DataflowEngine
     from ethunter.analyzer.orchestrator import run_all_analyses
 
     st = SymbolTable()
     for func in extract_functions(tree, "test.c"):
         st.add_function(func)
-    df = DataflowEngine(state=VariableState())
+    df = DataflowEngine()
 
     graph = run_all_analyses({"test.c": tree}, st, df)
     pairs = {(e.caller, e.callee) for e in graph.edges if e.type.value == 'indirect'}
@@ -932,13 +932,13 @@ def test_local_fp_from_struct_field_init():
     tree = parser.parse(source)
 
     from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
-    from ethunter.analyzer.dataflow import VariableState, DataflowEngine
+    from ethunter.analyzer.dataflow import DataflowEngine
     from ethunter.analyzer.orchestrator import run_all_analyses
 
     st = SymbolTable()
     for func in extract_functions(tree, "test.c"):
         st.add_function(func)
-    df = DataflowEngine(state=VariableState())
+    df = DataflowEngine()
 
     graph = run_all_analyses({"test.c": tree}, st, df)
     pairs = {(e.caller, e.callee) for e in graph.edges if e.type.value == 'indirect'}
@@ -990,13 +990,13 @@ def test_field_to_field_propagation():
     tree = parser.parse(source)
 
     from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
-    from ethunter.analyzer.dataflow import VariableState, DataflowEngine
+    from ethunter.analyzer.dataflow import DataflowEngine
     from ethunter.analyzer.orchestrator import run_all_analyses
 
     st = SymbolTable()
     for func in extract_functions(tree, "test.c"):
         st.add_function(func)
-    df = DataflowEngine(state=VariableState())
+    df = DataflowEngine()
 
     graph = run_all_analyses({"test.c": tree}, st, df)
     pairs = {(e.caller, e.callee) for e in graph.edges if e.type.value == 'indirect'}
@@ -1039,13 +1039,13 @@ def test_macro_expansion_param_tracking():
     tree = parser.parse(source)
 
     from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
-    from ethunter.analyzer.dataflow import VariableState, DataflowEngine
+    from ethunter.analyzer.dataflow import DataflowEngine
     from ethunter.analyzer.orchestrator import run_all_analyses
 
     st = SymbolTable()
     for func in extract_functions(tree, "test.c"):
         st.add_function(func)
-    df = DataflowEngine(state=VariableState())
+    df = DataflowEngine()
 
     graph = run_all_analyses({"test.c": tree}, st, df)
     pairs = {(e.caller, e.callee) for e in graph.edges if e.type.value == 'indirect'}
@@ -1157,13 +1157,13 @@ void invoke(struct ctx *c) {
     tree = parser.parse(source)
 
     from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
-    from ethunter.analyzer.dataflow import VariableState, DataflowEngine
+    from ethunter.analyzer.dataflow import DataflowEngine
     from ethunter.analyzer.orchestrator import run_all_analyses
 
     st = SymbolTable()
     for func in extract_functions(tree, "test.c"):
         st.add_function(func)
-    df = DataflowEngine(state=VariableState())
+    df = DataflowEngine()
 
     graph = run_all_analyses({"test.c": tree}, st, df)
 
@@ -1206,13 +1206,13 @@ void setup(void) {
     tree = parser.parse(source)
 
     from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
-    from ethunter.analyzer.dataflow import VariableState, DataflowEngine
+    from ethunter.analyzer.dataflow import DataflowEngine
     from ethunter.analyzer.orchestrator import run_all_analyses
 
     st = SymbolTable()
     for func in extract_functions(tree, "test.c"):
         st.add_function(func)
-    df = DataflowEngine(state=VariableState())
+    df = DataflowEngine()
 
     graph = run_all_analyses({"test.c": tree}, st, df)
     callback_reg_edges = [e for e in graph.edges if e.indirect_kind == 'callback_reg']
@@ -1253,15 +1253,16 @@ void setup(void) {
     tree = parser.parse(source)
 
     from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
-    from ethunter.analyzer.dataflow import VariableState, DataflowEngine, DataflowEngine
-    from ethunter.analyzer import param_assign
+    from ethunter.analyzer.dataflow import DataflowEngine
+    from ethunter.analyzer import param_helpers, param_binding
 
     st = SymbolTable()
     for func in extract_functions(tree, "test.c"):
         st.add_function(func)
-    engine = DataflowEngine(state=VariableState())
+    engine = DataflowEngine()
 
-    param_assign.analyze(tree=tree, filepath="test.c", symbol_table=st, dataflow=engine)
+    param_helpers.prepare(tree, "test.c", engine, st)
+    param_binding.analyze(tree, "test.c", st, engine)
 
     targets_a = engine.resolve('register_a:cb')
     assert targets_a == {'handler_a'}, \
@@ -1298,13 +1299,13 @@ void caller3(void) { forward(h3); }
     tree = parser.parse(source)
 
     from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
-    from ethunter.analyzer.dataflow import VariableState, DataflowEngine
+    from ethunter.analyzer.dataflow import DataflowEngine
     from ethunter.analyzer.orchestrator import run_all_analyses
 
     st = SymbolTable()
     for func in extract_functions(tree, "test.c"):
         st.add_function(func)
-    df = DataflowEngine(state=VariableState())
+    df = DataflowEngine()
 
     graph = run_all_analyses({"test.c": tree}, st, df)
     pairs = {(e.caller, e.callee) for e in graph.edges if e.type.value == 'indirect'}
@@ -1379,13 +1380,13 @@ void dispatch(struct ctx *c) {
     tree = parser.parse(source)
 
     from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
-    from ethunter.analyzer.dataflow import VariableState, DataflowEngine
+    from ethunter.analyzer.dataflow import DataflowEngine
     from ethunter.analyzer.orchestrator import run_all_analyses
 
     st = SymbolTable()
     for func in extract_functions(tree, "test.c"):
         st.add_function(func)
-    df = DataflowEngine(state=VariableState())
+    df = DataflowEngine()
 
     graph = run_all_analyses({"test.c": tree}, st, df)
     callback_param = [e for e in graph.edges if e.indirect_kind == "callback_param"]
@@ -1438,13 +1439,13 @@ void dispatch(struct ctx *c) {
     tree = parser.parse(source)
 
     from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
-    from ethunter.analyzer.dataflow import VariableState, DataflowEngine
+    from ethunter.analyzer.dataflow import DataflowEngine
     from ethunter.analyzer.orchestrator import run_all_analyses
 
     st = SymbolTable()
     for func in extract_functions(tree, "test.c"):
         st.add_function(func)
-    df = DataflowEngine(state=VariableState())
+    df = DataflowEngine()
 
     graph = run_all_analyses({"test.c": tree}, st, df)
 
@@ -1481,13 +1482,13 @@ void setup(void) {
     tree = parser.parse(source)
 
     from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
-    from ethunter.analyzer.dataflow import VariableState, DataflowEngine
+    from ethunter.analyzer.dataflow import DataflowEngine
     from ethunter.analyzer.orchestrator import run_all_analyses
 
     st = SymbolTable()
     for func in extract_functions(tree, "test.c"):
         st.add_function(func)
-    df = DataflowEngine(state=VariableState())
+    df = DataflowEngine()
 
     graph = run_all_analyses({"test.c": tree}, st, df)
 
@@ -1542,13 +1543,13 @@ void dispatch(struct ctx *c) {
     tree = parser.parse(source)
 
     from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
-    from ethunter.analyzer.dataflow import VariableState, DataflowEngine
+    from ethunter.analyzer.dataflow import DataflowEngine
     from ethunter.analyzer.orchestrator import run_all_analyses
 
     st = SymbolTable()
     for func in extract_functions(tree, "test.c"):
         st.add_function(func)
-    df = DataflowEngine(state=VariableState())
+    df = DataflowEngine()
 
     graph = run_all_analyses({"test.c": tree}, st, df)
 
@@ -1602,13 +1603,13 @@ void dispatcher(void) {
     tree = parser.parse(source)
 
     from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
-    from ethunter.analyzer.dataflow import VariableState, DataflowEngine
+    from ethunter.analyzer.dataflow import DataflowEngine
     from ethunter.analyzer.orchestrator import run_all_analyses
 
     st = SymbolTable()
     for func in extract_functions(tree, "test.c"):
         st.add_function(func)
-    df = DataflowEngine(state=VariableState())
+    df = DataflowEngine()
 
     graph = run_all_analyses({"test.c": tree}, st, df)
 
@@ -1640,11 +1641,11 @@ void setup(void) { register_handler(my_cb); }
     parser = Parser(lang)
     tree = parser.parse(source)
     from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
-    from ethunter.analyzer.dataflow import VariableState, DataflowEngine
+    from ethunter.analyzer.dataflow import DataflowEngine
     from ethunter.analyzer.orchestrator import run_all_analyses
     st = SymbolTable()
     for func in extract_functions(tree, "test.c"): st.add_function(func)
-    df = DataflowEngine(state=VariableState())
+    df = DataflowEngine()
     graph = run_all_analyses({"test.c": tree}, st, df)
     cr = {e.callee for e in graph.edges if e.indirect_kind == "callback_reg"}
     assert "my_cb" not in cr, f"register_handler forwards, should not emit: {cr}"
@@ -1698,15 +1699,15 @@ def test_param_helpers_prepare_populates_engine():
     prepare(tree, "test.c", engine)
     assert "direct_caller" in engine.func_params, f"func_params missing direct_caller: {engine.func_params}"
     assert engine.func_params["direct_caller"] == ["cb"], f"unexpected params: {engine.func_params['direct_caller']}"
-    # func_fp_params still on state during migration
-    assert hasattr(engine.state, 'func_fp_params'), "state missing func_fp_params"
-    assert 0 in engine.state.func_fp_params["direct_caller"], "direct_caller pos 0 should be fnptr"
-    # param_usage still on state during migration
-    assert hasattr(engine.state, 'param_usage'), "state missing param_usage"
-    assert engine.state.param_usage[("direct_caller", 0)] == "caller", \
-        f"expected caller, got {engine.state.param_usage.get(('direct_caller', 0))}"
-    assert engine.state.param_usage[("forwarder", 0)] == "forwarder", \
-        f"expected forwarder, got {engine.state.param_usage.get(('forwarder', 0))}"
+    # func_fp_params on engine
+    assert "direct_caller" in engine.func_fp_params, "engine missing func_fp_params entry"
+    assert 0 in engine.func_fp_params["direct_caller"], "direct_caller pos 0 should be fnptr"
+    # param_usage on engine
+    assert ("direct_caller", 0) in engine.param_usage, "engine missing param_usage entry"
+    assert engine.param_usage[("direct_caller", 0)] == "caller", \
+        f"expected caller, got {engine.param_usage.get(('direct_caller', 0))}"
+    assert engine.param_usage[("forwarder", 0)] == "forwarder", \
+        f"expected forwarder, got {engine.param_usage.get(('forwarder', 0))}"
     assert ("setter", 1) in engine.param_fields, f"setter cb param should map to field"
 
 
@@ -1879,12 +1880,12 @@ def test_scoped_key_isolates_same_name_vars():
     parser = Parser(lang)
     tree = parser.parse(source)
     from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
-    from ethunter.analyzer.dataflow import VariableState, DataflowEngine
+    from ethunter.analyzer.dataflow import DataflowEngine
     from ethunter.analyzer.orchestrator import run_all_analyses
     st = SymbolTable()
     for func in extract_functions(tree, "test.c"):
         st.add_function(func)
-    df = DataflowEngine(state=VariableState())
+    df = DataflowEngine()
     graph = run_all_analyses({"test.c": tree}, st, df)
     pairs = {(e.caller, e.callee) for e in graph.edges if e.type.value == 'indirect'}
     assert ("setup_a", "h_a") in pairs, f"Expected setup_a->h_a in {pairs}"
@@ -1911,12 +1912,12 @@ def test_type_aware_key_isolates_different_struct_types():
     parser = Parser(lang)
     tree = parser.parse(source)
     from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
-    from ethunter.analyzer.dataflow import VariableState, DataflowEngine
+    from ethunter.analyzer.dataflow import DataflowEngine
     from ethunter.analyzer.orchestrator import run_all_analyses
     st = SymbolTable()
     for func in extract_functions(tree, "test.c"):
         st.add_function(func)
-    df = DataflowEngine(state=VariableState())
+    df = DataflowEngine()
     graph = run_all_analyses({"test.c": tree}, st, df)
     fc = {(e.caller, e.callee) for e in graph.edges if e.indirect_kind == "field_call"}
     assert ("use_a", "h_b") not in fc, f"type_a.handler should NOT resolve to h_b: {fc}"
@@ -2047,6 +2048,7 @@ def test_return_field_resolution_after_initializer_assign():
     cast_assign.analyze(tree=tree, filepath="test.c", symbol_table=st, dataflow=engine)
     _resolve_fields(tree, "test.c", st, engine)
     # Run field_call for struct dispatch
+    field_call.collect(tree, "test.c", engine, st, st.all_function_names)
     edges = field_call.analyze(tree=tree, filepath="test.c", symbol_table=st, dataflow=engine)
     pairs = {(e.caller, e.callee) for e in edges if e.type == CallType.INDIRECT}
     assert ("debug_cb", "ssl_default") in pairs, \
@@ -2070,12 +2072,12 @@ def test_collect_local_var_types_records_struct_types():
     parser = Parser(lang)
     tree = parser.parse(source)
     from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
-    from ethunter.analyzer.dataflow import VariableState, DataflowEngine, DataflowEngine
+    from ethunter.analyzer.dataflow import DataflowEngine
     from ethunter.analyzer import field_call
     st = SymbolTable()
     for func in extract_functions(tree, "test.c"):
         st.add_function(func)
-    engine = DataflowEngine(state=VariableState())
+    engine = DataflowEngine()
     field_call.collect(tree, "test.c", engine, st, st.all_function_names)
     t = st.get_func_var_type("do_work", "ctx")
     assert t == "my_type", f"Expected my_type, got {t}"
@@ -2097,12 +2099,12 @@ def test_collect_cast_types_records_struct_types():
     parser = Parser(lang)
     tree = parser.parse(source)
     from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
-    from ethunter.analyzer.dataflow import VariableState, DataflowEngine, DataflowEngine
+    from ethunter.analyzer.dataflow import DataflowEngine
     from ethunter.analyzer import field_call
     st = SymbolTable()
     for func in extract_functions(tree, "test.c"):
         st.add_function(func)
-    engine = DataflowEngine(state=VariableState())
+    engine = DataflowEngine()
     field_call.collect(tree, "test.c", engine, st, st.all_function_names)
     t = st.get_func_var_type("do_work", "ptr")
     assert t == "ctx", f"Expected ctx, got {t}"
@@ -2182,7 +2184,7 @@ def test_chain_resolve_s_method_put_cb():
     import tempfile, os
     from ethunter.parser.ast_builder import parse_file
     from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
-    from ethunter.analyzer.dataflow import VariableState, DataflowEngine
+    from ethunter.analyzer.dataflow import DataflowEngine
     from ethunter.analyzer.orchestrator import run_all_analyses
 
     code = b"""
@@ -2206,7 +2208,7 @@ def test_chain_resolve_s_method_put_cb():
         st = SymbolTable()
         for func in extract_functions(tree, tmp):
             st.add_function(func)
-        df = DataflowEngine(state=VariableState())
+        df = DataflowEngine()
         graph = run_all_analyses(trees, st, df)
 
         indirects = {(e.caller, e.callee)

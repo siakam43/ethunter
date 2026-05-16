@@ -6,7 +6,7 @@ import pytest
 from ethunter.parser.ast_builder import parse_file
 from ethunter.analyzer.direct_call import analyze as direct_analyze
 from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
-from ethunter.analyzer.dataflow import VariableState, DataflowEngine
+from ethunter.analyzer.dataflow import DataflowEngine
 
 FIXTURES = os.path.join(os.path.dirname(__file__), 'fixtures')
 
@@ -18,7 +18,7 @@ def _make_analyzer_env(fixture_name):
     st = SymbolTable()
     for func in extract_functions(tree, fixture_name):
         st.add_function(func)
-    df = DataflowEngine(state=VariableState())
+    df = DataflowEngine()
     return tree, st, df
 
 
@@ -109,17 +109,24 @@ def test_cast_assign_complex():
 
 
 def test_param_assign_simple():
-    from ethunter.analyzer import param_assign
+    from ethunter.analyzer import param_helpers, param_binding
     tree, st, df = _make_analyzer_env('param_assign.c')
-    edges = param_assign.analyze(tree, 'param_assign.c', st, df)
+    param_helpers.prepare(tree, 'param_assign.c', df, st)
+    param_binding.analyze(tree, 'param_assign.c', st, df)
+    param_binding._resolve_fields(tree, 'param_assign.c', st, df)
     assert len(df.targets) > 0
     assert any(k.startswith('<gstruct:') for k in df.targets)
 
 
 def test_param_assign_complex():
-    from ethunter.analyzer import param_assign
+    from ethunter.analyzer import param_helpers, param_binding, param_dispatch, callback_reg
     tree, st, df = _make_analyzer_env('param_assign_complex.c')
-    edges = param_assign.analyze(tree, 'param_assign_complex.c', st, df)
+    param_helpers.prepare(tree, 'param_assign_complex.c', df, st)
+    param_binding.analyze(tree, 'param_assign_complex.c', st, df)
+    param_binding._resolve_fields(tree, 'param_assign_complex.c', st, df)
+    edges = param_dispatch.analyze(tree, 'param_assign_complex.c', df)
+    df.covered_callees = {e.callee for e in edges if getattr(e, 'indirect_kind', '') == 'field_call'}
+    edges += callback_reg.analyze(tree, 'param_assign_complex.c', df)
     callees = {e.callee for e in edges}
     assert 'on_start' in callees or 'on_stop' in callees
 
@@ -166,6 +173,7 @@ def test_field_call_simple():
     from ethunter.analyzer import initializer_assign, field_call
     tree, st, df = _make_analyzer_env('field_call.c')
     initializer_assign.analyze(tree, 'field_call.c', st, df)
+    field_call.collect(tree, 'field_call.c', df, st, st.all_function_names)
     edges = field_call.analyze(tree, 'field_call.c', st, df)
     callees = {e.callee for e in edges}
     assert 'fs_init' in callees
@@ -177,6 +185,7 @@ def test_field_call_subscript():
     from ethunter.analyzer import initializer_assign, field_call
     tree, st, df = _make_analyzer_env('field_call_subscript.c')
     initializer_assign.analyze(tree, 'field_call_subscript.c', st, df)
+    field_call.collect(tree, 'field_call_subscript.c', df, st, st.all_function_names)
     edges = field_call.analyze(tree, 'field_call_subscript.c', st, df)
     callees = {e.callee for e in edges}
     assert 'handler_a' in callees
@@ -196,6 +205,7 @@ def test_initializer_assign_pointer_field():
     assert 'handler_a' in all_targets
     assert 'handler_b' in all_targets
     # Verify field_call detects the indirect calls
+    field_call.collect(tree, 'initializer_assign_pointer_field.c', df, st, st.all_function_names)
     edges = field_call.analyze(tree, 'initializer_assign_pointer_field.c', st, df)
     callees = {e.callee for e in edges}
     assert 'handler_a' in callees
@@ -208,6 +218,7 @@ def test_field_call_chain():
     from ethunter.analyzer import initializer_assign, field_call
     tree, st, df = _make_analyzer_env('field_call_complex.c')
     initializer_assign.analyze(tree, 'field_call_complex.c', st, df)
+    field_call.collect(tree, 'field_call_complex.c', df, st, st.all_function_names)
     edges = field_call.analyze(tree, 'field_call_complex.c', st, df)
     callees = {e.callee for e in edges}
     assert 'net_read' in callees
@@ -241,7 +252,7 @@ def test_symbol_table_extraction():
 
 
 def test_dataflow_assign_merge():
-    df = DataflowEngine(state=VariableState())
+    df = DataflowEngine()
     df.assign('fp', 'foo')
     assert df.resolve('fp') == {'foo'}
     df.merge('fp', 'fp2')
@@ -254,7 +265,7 @@ def test_call_graph_dedup():
     files = ['direct_call.c', 'fp_assign.c']
     trees = {}
     st = SymbolTable()
-    df = DataflowEngine(state=VariableState())
+    df = DataflowEngine()
     for f in files:
         path = os.path.join(FIXTURES, f)
         tree = parse_file(path)

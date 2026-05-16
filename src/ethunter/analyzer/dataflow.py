@@ -1,4 +1,4 @@
-"""Shared variable state tracker for function pointer data flow."""
+"""Cross-function dataflow engine for function pointer tracking."""
 
 from __future__ import annotations
 
@@ -20,25 +20,18 @@ _NilSymbolTable = _NilSymbolTableType()
 
 
 @dataclass
-class VariableState:
-    """Track variable type info and callback registrations."""
-    var_types: dict[str, str] = field(default_factory=dict)
-
-    def register_callback(self, func_name: str) -> None:
-        """No-op: registered_callbacks was dead code."""
-
-@dataclass
 class DataflowEngine:
     """Cross-function dataflow engine for function pointer tracking.
 
-    Wraps VariableState (backward compatible) and adds:
-    - ParamTracker: parameter-to-field propagation across function calls
-    - RetTracker: return value tracking for struct field function pointers
-    - CastResolver: nested cast expression unwrapping
+    Stores:
+    - ScopedStore: function-scoped variable → targets
+    - func_params: function → parameter name list
+    - func_fp_params: function → set of fnptr parameter positions
+    - param_usage: (function, position) → usage role (caller/forwarder/storage/unknown)
+    - param_fields: (function, position) → field paths (param→struct field bridging)
+    - ret_fields: function → field paths (return value bridging)
     """
-    state: VariableState = field(default_factory=VariableState)
-
-    # Scoped dataflow store (new — Phase A migration)
+    # Scoped dataflow store
     store: ScopedStore = field(default_factory=ScopedStore)
 
     # Parameter propagation: (func_name, param_position) -> {field_path}
@@ -56,6 +49,12 @@ class DataflowEngine:
     # Cross-file function metadata (populated by param_helpers.prepare)
     func_params: dict[str, list[str]] = field(default_factory=dict)
 
+    # Function pointer parameter positions: func_name -> {fnptr_param_positions}
+    func_fp_params: dict[str, set[int]] = field(default_factory=dict)
+
+    # Parameter usage classification: (func_name, position) -> role
+    param_usage: dict[tuple[str, int], str] = field(default_factory=dict)
+
     # Phase 3 registration tracking
     registration_sites: list = field(default_factory=list)
     covered_callees: set[str] = field(default_factory=set)
@@ -66,19 +65,12 @@ class DataflowEngine:
     # Param binding storage: (call_name, param_name) -> {targets}
     _param_bindings: dict[tuple[str, str], set[str]] = field(default_factory=dict)
 
-    # NOTE: func_fp_params and param_usage remain on dataflow.state (VariableState)
-    # during migration. They will be promoted to engine level in Task 2 when
-    # param_helpers.prepare() takes ownership and old hasattr fallback chains
-    # in param_assign are removed.
-
     def add_param_binding(self, call_name: str, param_name: str, target: str) -> None:
-        """Register a call-site param binding. Replaces dataflow.assign('fn:param', target)."""
+        """Register a call-site param binding."""
         key = (call_name, param_name)
         if key not in self._param_bindings:
             self._param_bindings[key] = set()
         self._param_bindings[key].add(target)
-
-    # === Backward compatible interface ===
 
     def assign(self, var_name: str, target: str) -> None:
         """Assign a target to a key, routing to ScopedStore for structured prefixes."""
@@ -101,7 +93,7 @@ class DataflowEngine:
     def resolve(self, var_name: str) -> set[str]:
         """Resolve a key, checking ScopedStore first for structured prefixes."""
         if var_name.startswith('<gstruct:'):
-            key = var_name[len('<gstruct:'):-1]  # strip <gstruct: and >
+            key = var_name[len('<gstruct:'):-1]
             return self.store.resolve_struct_field(f'gstruct:{key}')
         if var_name.startswith('<struct:'):
             key = var_name[len('<struct:'):-1]
@@ -153,7 +145,6 @@ class DataflowEngine:
         targets = self.store.resolve_func_var('<global>', var_name)
         if targets:
             return targets
-        # Fallback: scan all func_vars for bare-key match
         for (func, var), vals in self.store.func_vars.items():
             if var == var_name and vals:
                 return vals
@@ -175,7 +166,6 @@ class DataflowEngine:
         """Resolve a struct field function pointer call.
 
         Uses FieldResolver 4-tier chain + garray fallback.
-        All backed by ScopedStore — no old-store dependency.
         """
         from ethunter.analyzer.field_resolver import FieldResolver
         from ethunter.graph.model import Confidence, Evidence
@@ -221,9 +211,7 @@ class DataflowEngine:
         return result
 
     def register_callback(self, func_name: str) -> None:
-        """No-op: registered_callbacks was dead code. Removed in arch refactor Phase 2."""
-
-    # === New: ParamTracker ===
+        """No-op: registered_callbacks was dead code."""
 
     def register_param_mapping(
         self,
@@ -232,11 +220,7 @@ class DataflowEngine:
         field_path: str,
         struct_param_idx: int = 0,
     ) -> None:
-        """Register that param_idx of func_name stores into a struct field.
-
-        Example: SSL_CTX_set_alpn_select_cb(ctx, cb) stores cb into ctx->ext.alpn_select_cb
-        -> register_param_mapping("SSL_CTX_set_alpn_select_cb", 1, "ctx->ext.alpn_select_cb")
-        """
+        """Register that param_idx of func_name stores into a struct field."""
         key = (func_name, param_idx)
         if key not in self.param_fields:
             self.param_fields[key] = set()
@@ -250,19 +234,12 @@ class DataflowEngine:
         symbol_names: set[str] | None = None,
         filepath: str = '',
     ) -> set[str]:
-        """Resolve what targets the call-site argument has, and propagate to field paths.
-
-        Returns the set of function names that arg_name resolves to.
-        Also writes those targets into the registered field paths in dataflow.
-        """
+        """Resolve what targets the call-site argument has, and propagate to field paths."""
         key = (func_name, param_idx)
         if key not in self.param_fields:
             return set()
 
-        # Step 1: Try scoped store resolve (for variables that were assigned)
         arg_targets = self.resolve_variable(arg_name)
-
-        # Step 2: If arg_name itself is a known function name, add it directly
         if symbol_names and arg_name in symbol_names:
             arg_targets.add(arg_name)
 
@@ -271,21 +248,13 @@ class DataflowEngine:
 
         for target in arg_targets:
             for field_key in self.param_fields[key]:
-                # Phase A: dual-write to old state and new store
-                # Migrate to ScopedStore
                 if field_key.startswith('<gstruct:') and field_key.endswith('>'):
                     self.store.assign_struct_field(field_key[1:-1], target, filepath)
 
         return arg_targets
 
-    # === New: RetTracker ===
-
     def register_return(self, func_name: str, field_path: str) -> None:
-        """Register that a function returns a struct field function pointer.
-
-        Example: SSL_CTX_get_security_callback returns ctx->cert->sec_cb
-        -> register_return("SSL_CTX_get_security_callback", "cert->sec_cb")
-        """
+        """Register that a function returns a struct field function pointer."""
         if func_name not in self.ret_fields:
             self.ret_fields[func_name] = set()
         self.ret_fields[func_name].add(field_path)
@@ -311,22 +280,15 @@ class DataflowEngine:
 
         return results
 
-    # === New: CastResolver ===
-
     def unwrap_cast(self, node) -> str | None:
         """Recursively unwrap nested cast expressions.
 
         (T1)(T2)func  ->  "func"
-        (T1)(uintptr_t)cb  ->  "cb"
-
-        Uses child_by_field_name('value') for cast_expression (robust across tree-sitter versions).
-        Returns None if the node is not a cast/pointer/paren expression.
         """
         if node.type == 'identifier' and node.text:
             return node.text.decode('utf-8')
 
         if node.type == 'cast_expression':
-            # Prefer child_by_field_name for robustness, fallback to iteration
             value = node.child_by_field_name('value')
             if value:
                 return self.unwrap_cast(value)

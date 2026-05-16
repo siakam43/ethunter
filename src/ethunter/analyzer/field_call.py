@@ -16,7 +16,7 @@ import re
 import tree_sitter as ts
 
 from ethunter.graph.model import CallEdge, CallType, Confidence, Evidence
-from ethunter.analyzer.dataflow import VariableState
+from ethunter.analyzer.dataflow import DataflowEngine
 from ethunter.analyzer.symbol_table import SymbolTable
 from ethunter.analyzer.helpers import (
     find_enclosing_function, extract_field_path, collect_field_assignments,
@@ -66,16 +66,14 @@ def collect(tree: ts.Tree, filepath: str, dataflow, symbol_table,
         if fa.resolved_value is not None:
             # Old store: only for known function names
 
-            # New store: ALL resolved values (functions + struct vars)
-            if hasattr(dataflow, 'store'):
-                base_var = fa.field_path.split('.')[0]
-                field_tail = dataflow.store.compute_field_tail(fa.field_path)
-                dataflow.store.assign_struct_field(f'gstruct:{base_var}.{field_tail}',
+            base_var = fa.field_path.split('.')[0]
+            field_tail = dataflow.store.compute_field_tail(fa.field_path)
+            dataflow.store.assign_struct_field(f'gstruct:{base_var}.{field_tail}',
+                                               fa.resolved_value, filepath)
+            struct_type = symbol_table.get_func_var_type(fa.enclosing_func, base_var)
+            if struct_type:
+                dataflow.store.assign_struct_field(f'gstruct:{struct_type}.{field_tail}',
                                                    fa.resolved_value, filepath)
-                struct_type = symbol_table.get_func_var_type(fa.enclosing_func, base_var)
-                if struct_type:
-                    dataflow.store.assign_struct_field(f'gstruct:{struct_type}.{field_tail}',
-                                                       fa.resolved_value, filepath)
     _collect_local_var_types(tree, symbol_table)
     _collect_cast_types(tree, symbol_table)
 
@@ -202,7 +200,7 @@ def analyze(
     tree: ts.Tree,
     filepath: str,
     symbol_table: SymbolTable,
-    dataflow: VariableState,
+    dataflow: DataflowEngine,
 ) -> list[CallEdge]:
     """Detect indirect calls through struct field expressions."""
     edges: list[CallEdge] = []
@@ -222,24 +220,10 @@ def analyze(
                             return cc
         return node if node.type == 'field_expression' else None
 
-    # Pass 1: collect field assignments (still needed for macro-expanded calls)
-    # Main collection moved to collect() but keep here for direct-test compat
-    for fa in collect_field_assignments(tree, unwrap_fn=getattr(dataflow, 'unwrap_cast', None)):
-        if fa.resolved_value is not None and fa.resolved_value in symbol_names:
-            if hasattr(dataflow, 'store'):
-                base_var = fa.field_path.split('.')[0]
-                field_tail = dataflow.store.compute_field_tail(fa.field_path)
-                dataflow.store.assign_struct_field(f'gstruct:{base_var}.{field_tail}',
-                                                   fa.resolved_value, filepath)
-                struct_type = symbol_table.get_func_var_type(fa.enclosing_func, base_var)
-                if struct_type:
-                    dataflow.store.assign_struct_field(f'gstruct:{struct_type}.{field_tail}',
-                                                       fa.resolved_value, filepath)
-
     pointer_resolutions = collect_pointer_resolutions(tree)
     local_fp_mapping = collect_local_fp_assignments(tree, dataflow, symbol_names, symbol_table)
 
-    # Pass 2: detect call sites
+    # Detect call sites
     def _visit(node: ts.Node) -> None:
         if node.type == 'call_expression':
             func_node = node.child_by_field_name('function') or node.children[0]
@@ -260,7 +244,7 @@ def analyze(
                         evidence = Evidence('field_call_resolution')
 
                     # Callback-of-callback
-                    func_fp_params = getattr(dataflow.state, 'func_fp_params', None) if hasattr(dataflow, 'state') else None
+                    func_fp_params = dataflow.func_fp_params
                     if func_fp_params:
                         args = node.child_by_field_name('arguments')
                         if args:

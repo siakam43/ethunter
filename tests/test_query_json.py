@@ -9,7 +9,7 @@ from pathlib import Path
 
 from ethunter.parser.ast_builder import parse_file
 from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
-from ethunter.analyzer.dataflow import VariableState, DataflowEngine
+from ethunter.analyzer.dataflow import DataflowEngine
 from ethunter.analyzer.orchestrator import run_all_analyses
 from ethunter.graph.model import CallGraph, CallEdge, CallType
 from ethunter.output.json_output import to_json
@@ -27,7 +27,7 @@ def _make_graph_from_fixture(fixture_name):
     st = SymbolTable()
     for func in extract_functions(tree, fixture_name):
         st.add_function(func)
-    df = DataflowEngine(state=VariableState())
+    df = DataflowEngine()
     return run_all_analyses({path: tree}, st, df)
 
 

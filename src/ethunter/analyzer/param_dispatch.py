@@ -22,7 +22,7 @@ def analyze(
     """Detect indirect calls through fnptr params and produce callback_param edges."""
     edges: list[CallEdge] = []
     func_params = dataflow.func_params
-    func_fp_params = getattr(dataflow.state, 'func_fp_params', {})
+    func_fp_params = dataflow.func_fp_params
 
     # Read per-call-site targets from engine (populated by param_binding Phase 1)
     call_site_targets = dataflow.call_site_targets
@@ -91,16 +91,14 @@ def analyze(
             evidence=Evidence('callee_body_call'),
         ))
 
-    # === Pass B: call-site caller edges (dedup against Pass A) ===
-    pass_a_targets = {(tgt, caller) for (caller, tgt, _, _) in pass_a_edges}
+    # === Pass B: call-site caller edges ===
+    # call_site_targets are already per-caller (no N×M cross-contamination).
     seen_pass4: set[tuple[str, str]] = set()
 
     for (caller, callee, arg_idx), targets in call_site_targets.items():
         for target in targets:
             key = (caller, target)
             if key in seen_pass4:
-                continue
-            if (target, callee) in pass_a_targets:
                 continue
             seen_pass4.add(key)
             edges.append(CallEdge(

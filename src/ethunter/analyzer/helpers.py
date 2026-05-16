@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import tree_sitter as ts
 
-from ethunter.analyzer.dataflow import VariableState
+from ethunter.analyzer.dataflow import DataflowEngine
 
 
 def find_enclosing_function(node: ts.Node, root: ts.Node) -> str | None:
@@ -95,7 +95,7 @@ def extract_field_path(node: ts.Node) -> str | None:
 
 def handle_init_declarator(
     node: ts.Node,
-    dataflow: VariableState,
+    dataflow: DataflowEngine,
     symbol_names: set[str],
 ) -> None:
     """Handle init_declarators like void (*fp)(void) = func_name or *var = &target."""

@@ -11,7 +11,7 @@ from __future__ import annotations
 import tree_sitter as ts
 
 from ethunter.graph.model import CallEdge, CallType, Confidence, Evidence
-from ethunter.analyzer.dataflow import VariableState
+from ethunter.analyzer.dataflow import DataflowEngine
 from ethunter.analyzer.symbol_table import SymbolTable
 from ethunter.analyzer.helpers import find_enclosing_function
 from ethunter.analyzer.local_fp_tracker import collect_local_fp_assignments
@@ -21,7 +21,7 @@ def analyze(
     tree: ts.Tree,
     filepath: str,
     symbol_table: SymbolTable,
-    dataflow: VariableState,
+    dataflow: DataflowEngine,
 ) -> list[CallEdge]:
     """Detect indirect calls through function pointer identifiers."""
     edges: list[CallEdge] = []

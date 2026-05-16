@@ -129,12 +129,44 @@ class CallGraph:
     functions: dict[str, Function] = field(default_factory=dict)  # key -> Function
     edges: list[CallEdge] = field(default_factory=list)
     source_files: list[str] = field(default_factory=list)
+    _edge_index: dict[tuple[str, str], int] = field(default_factory=dict)
 
     def add_function(self, func: Function) -> None:
         self.functions[func.key] = func
 
-    def add_edge(self, edge: CallEdge) -> None:
+    def add_edge(self, edge: CallEdge) -> bool:
+        """Add edge. If (caller, callee) exists, keep higher confidence.
+        Returns True if edge was newly added (not deduplicated)."""
+        key = (edge.caller, edge.callee)
+        if key in self._edge_index:
+            idx = self._edge_index[key]
+            existing = self.edges[idx]
+            if edge.confidence.ordinal() > existing.confidence.ordinal():
+                self.edges[idx] = edge
+            elif (edge.confidence == existing.confidence
+                  and edge.type == CallType.DIRECT
+                  and existing.type != CallType.DIRECT):
+                self.edges[idx] = edge
+            return False
+        self._edge_index[key] = len(self.edges)
         self.edges.append(edge)
+        return True
+
+    def has_edge(self, caller: str, callee: str) -> bool:
+        return (caller, callee) in self._edge_index
+
+    def remove_edges(self, predicate: callable) -> int:
+        """Remove edges matching predicate. Rebuilds index. Returns count removed."""
+        before = len(self.edges)
+        self.edges = [e for e in self.edges if not predicate(e)]
+        self._rebuild_index()
+        return before - len(self.edges)
+
+    def _rebuild_index(self) -> None:
+        self._edge_index = {}
+        for i, e in enumerate(self.edges):
+            key = (e.caller, e.callee)
+            self._edge_index[key] = i
 
     def query_callers(self, func_name: str) -> list[CallEdge]:
         return [e for e in self.edges if e.callee == func_name]

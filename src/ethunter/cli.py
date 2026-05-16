@@ -8,7 +8,7 @@ from pathlib import Path
 from ethunter.parser.scanner import scan_files
 from ethunter.parser.ast_builder import parse_file
 from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
-from ethunter.analyzer.dataflow import VariableState
+from ethunter.analyzer.dataflow import DataflowEngine
 from ethunter.analyzer.orchestrator import run_all_analyses
 from ethunter.graph.model import CallGraph
 from ethunter.output.json_output import to_json
@@ -133,7 +133,7 @@ def main() -> None:
 
         # Phase 3: Build symbol table
         symbol_table = SymbolTable()
-        dataflow = VariableState()
+        dataflow = DataflowEngine()
 
         for filepath, tree in trees.items():
             for func in extract_functions(tree, filepath):

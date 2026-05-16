@@ -163,12 +163,12 @@ second pass re-evaluates unresolved references. This is a known constraint, not 
 regression from current behavior.
 
 **Constraint — complete expression type coverage**: eval() must handle ALL expression
-types that can appear in function pointer contexts. The pseudocode shows 4 types;
-real C code requires at minimum: `identifier`, `field_expression`, `call_expression`,
-`return_statement`, `pointer_expression` (&var, *ptr), `cast_expression`, `subscript_expression`
-(arr[i]), `parenthesized_expression`, `conditional_expression` (ternary), `assignment_expression`,
-`comma_expression`. Unhandled types must return a sentinel value (not empty set) to
-avoid silently breaking composability chains.
+types that can appear in function pointer contexts. The pseudocode shows 5 types
+as illustration; real C code requires at minimum: `identifier`, `field_expression`,
+`call_expression`, `return_statement`, `assignment_expression`, `pointer_expression`
+(&var, *ptr), `cast_expression`, `subscript_expression` (arr[i]), `parenthesized_expression`,
+`conditional_expression` (ternary), `comma_expression`. Unhandled types must return
+a sentinel value (not empty set) to avoid silently breaking composability chains.
 
 **Constraint — value ambiguity**: ValueStore values are `Set[str]` where each string
 may be a function name OR a struct/variable name (used for chain resolution, e.g.,
@@ -245,7 +245,14 @@ Unified framework trace (all steps covered by generic primitives):
 
 ### Phase 2: Migrate producer+consumer pairs one module at a time
 
-Each sub-phase targets one data category (struct fields, func vars, etc.):
+Each sub-phase targets one data category (struct fields, func vars, etc.).
+Work proceeds on a long-lived feature branch. Within the branch, each sub-phase
+is a sequence of small, test-passing commits following the dual-write →
+dual-read → switch-primary → cleanup pattern described below. The branch is
+merged to main only after all sub-phases are complete and the full benchmark
+suite passes.
+
+**Commit pattern for each sub-phase** (example: struct_fields):
 
 1. Add writes to `ValueStore` in the producer module, alongside existing ScopedStore writes
 2. Update the consumer module to read from `ValueStore` (with ScopedStore fallback)
@@ -285,19 +292,35 @@ Each sub-phase targets one data category (struct fields, func vars, etc.):
 - Pointer alias analysis — out of scope
 - Inter-procedural call graph ordering — existing orchestrator ordering is preserved
 
-## Design Decisions Not Yet Made
+## Design Decisions
 
-1. **eval() traversal direction**: Top-down (walk from root, maintain func_context as state)
-   or bottom-up (evaluate individual expression nodes, look up enclosing function via
-   `find_enclosing_function()`). Top-down is simpler for func_context bookkeeping;
-   bottom-up is more flexible for targeted re-evaluation. This decision affects the
-   signature of eval() — if top-down, eval() doesn't need a func_context parameter
-   (it's maintained during traversal); if bottom-up, it does.
+1. **eval() traversal direction — TOP-DOWN**. All current analyzers walk
+   from the root node maintaining traversal state. func_context is threaded
+   as traversal state, not looked up via ancestor search.
 
-2. **Re-evaluation vs caching**: eval() re-evaluates expressions each time they are
-   encountered. For large projects, repeated evaluation of identical sub-expressions
-   could add overhead. A cache keyed by (node_id, func_context) could eliminate
-   redundant computation but adds complexity. Decision deferred to implementation.
+2. **Re-evaluation vs caching — NO CACHE**. The store uses union semantics
+   (values are never removed), so repeated evaluation of the same expression
+   always produces the same result. Dictionary lookups are negligible cost
+   for typical C projects. Targeted memoization can be added later if profiling
+   shows hotspots.
+
+3. **ValueStore mutation — MUTABLE UPDATES**. The pipeline is sequential;
+   cross-file dependencies require shared mutable state. Immutable snapshots
+   per function add copy overhead with no practical benefit in the current
+   single-threaded architecture.
+
+4. **Control flow — MONOTONIC ACCUMULATION**. Call graph generation is an
+   over-approximation problem: "fp might be func_a or func_b" is acceptable.
+   Control-flow sensitivity (SSA, basic blocks) is already listed as a
+   non-goal.
+
+5. **Branch strategy — FEATURE BRANCH WITH INCREMENTAL COMMITS**. All
+   sub-phases (2a-2d) and phases (3-5) are developed on a long-lived feature
+   branch. Within the branch, each sub-phase follows the 4-step commit pattern
+   (dual-write → dual-read → switch-primary → cleanup). The branch is merged
+   to main only after all phases are complete and the full benchmark suite
+   passes. This keeps main history clean while preserving the safety benefits
+   of incremental refactoring.
 
 ## Risks
 
@@ -307,8 +330,3 @@ Each sub-phase targets one data category (struct fields, func vars, etc.):
   cases. For typical C projects (<10k LOC), the overhead is negligible (AST depth
   is bounded by tree-sitter parsing, typically <50 levels per expression).
 
-## Open Questions
-
-1. Should `ValueStore` use immutable snapshots per function (functional style) or mutable updates (current style)?
-2. Should `eval()` handle control flow (if/switch) or assume monotonic accumulation?
-3. Should the migration be done in a long-lived feature branch or incrementally on main?

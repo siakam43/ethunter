@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import tree_sitter as ts
 
-from ethunter.analyzer.dataflow import VariableState
+from ethunter.analyzer.dataflow import DataflowEngine
 from ethunter.analyzer.symbol_table import SymbolTable
 from ethunter.analyzer.helpers import extract_identifier_from_declarator, collect_pointer_resolutions
 
@@ -59,31 +59,26 @@ def analyze(
     tree: ts.Tree,
     filepath: str,
     symbol_table: SymbolTable,
-    dataflow: VariableState,
+    dataflow: DataflowEngine,
 ) -> list:
     """Track function pointer assignments via initializers."""
     edges: list = []
     symbol_names = symbol_table.all_function_names
 
     def _assign_gstruct(field_path: str, target: str) -> None:
-        """Write gstruct dataflow key in old + new (field_tail) formats."""
+        """Write gstruct dataflow key."""
         base_var= field_path.split('.')[0]
-        field_tail = dataflow.store.compute_field_tail(field_path) if hasattr(dataflow, 'store') else field_path
-        if hasattr(dataflow, 'store'):
-            dataflow.store.assign_struct_field(f'gstruct:{base_var}.{field_tail}', target, filepath)
+        field_tail = dataflow.store.compute_field_tail(field_path)
+        dataflow.store.assign_struct_field(f'gstruct:{base_var}.{field_tail}', target, filepath)
         struct_type = symbol_table.get_var_type(base_var)
         if struct_type:
-            if hasattr(dataflow, 'store'):
-                dataflow.store.assign_struct_field(f'gstruct:{struct_type}.{field_tail}', target, filepath)
+            dataflow.store.assign_struct_field(f'gstruct:{struct_type}.{field_tail}', target, filepath)
 
     def _extract_cast_target(node: ts.Node) -> str | None:
         """Extract function name from inside a cast_expression."""
-        # Try unwrap_cast if dataflow has it (DataflowEngine)
-        if hasattr(dataflow, 'unwrap_cast'):
-            result = dataflow.unwrap_cast(node)
-            if result:
-                return result
-        # Fallback: original single-level logic
+        result = dataflow.unwrap_cast(node)
+        if result:
+            return result
         if node.type == 'cast_expression':
             value = node.child_by_field_name('value')
             if value and value.type == 'identifier' and value.text:
@@ -264,8 +259,7 @@ def analyze(
                 if c.type in _STORE_TYPES:
                     target = _extract_function_from_value(c)
                     if target:
-                        if hasattr(dataflow, 'store'):
-                            dataflow.store.assign_global_array(var_name, target)
+                        dataflow.store.assign_global_array(var_name, target)
                         _assign_gstruct(f'{var_name}.{index}', target)
                         if index < len(field_names):
                             field_name = field_names[index]
@@ -274,8 +268,7 @@ def analyze(
                     # &struct_name -> store struct name for downstream resolution
                     inner = c.children[-1] if c.children else None
                     if inner and inner.type == 'identifier' and inner.text:
-                        if hasattr(dataflow, 'store'):
-                            dataflow.store.assign_global_array(var_name, inner.text.decode('utf-8'))
+                        dataflow.store.assign_global_array(var_name, inner.text.decode('utf-8'))
                 index += 1
             elif c.type == 'initializer_list':
                 inner_index = 0
@@ -285,22 +278,20 @@ def analyze(
                             target = _extract_function_from_value(inner)
                             if target:
                                 dataflow.assign(f'<garray:{var_name}>', target)
-                                if hasattr(dataflow, 'store'):
-                                    dataflow.store.assign_global_array(var_name, target)
+                                dataflow.store.assign_global_array(var_name, target)
                                 if inner_index < len(field_names):
                                     field_name = field_names[inner_index]
                                     _assign_gstruct(f'{var_name}.{field_name}', target)
                         elif inner.type in _STRUCT_REF_TYPES:
                             ref = inner.children[-1] if inner.children else None
                             if ref and ref.type == 'identifier' and ref.text:
-                                if hasattr(dataflow, 'store'):
-                                    dataflow.store.assign_global_array(var_name, ref.text.decode('utf-8'))
+                                dataflow.store.assign_global_array(var_name, ref.text.decode('utf-8'))
                         inner_index += 1
 
     def _track_pointer_field_assignments(
         tree: ts.Tree,
         filepath: str,
-        dataflow: VariableState,
+        dataflow: DataflowEngine,
         symbol_names: set[str],
     ) -> None:
         """Track vec->field = func assignments, resolving vec to global array name.
@@ -417,8 +408,6 @@ def analyze(
                                     has_garray = bool(dataflow.resolve_global_array(arg_name))
                                     if (has_gstruct or has_garray) and arg_idx < len(param_names):
                                         pname = param_names[arg_idx]
-                                        if not hasattr(dataflow, 'param_alias_map'):
-                                            dataflow.param_alias_map = {}
                                         dataflow.param_alias_map[(callee, pname)] = arg_name
                                 arg_idx += 1
             for child in node.children:
@@ -442,17 +431,16 @@ def analyze(
                     if var_name and field_name and rhs.type == 'identifier' and rhs.text:
                         raw_name = rhs.text.decode('utf-8')
                         resolved = resolutions.get(var_name, var_name)
+                        field_tail = dataflow.store.compute_field_tail(f'{var_name}.{field_name}')
                         # Check if RHS is a literal function name
                         if raw_name in symbol_names:
-                            if hasattr(dataflow, 'store'):
-                                dataflow.store.assign_struct_field(
-                                    f'gstruct:{resolved}.{field_name}', raw_name, filepath)
+                            dataflow.store.assign_struct_field(
+                                f'gstruct:{resolved}.{field_tail}', raw_name, filepath)
                         # Check if RHS is a parameter — resolve to actual functions
                         elif raw_name in param_mappings:
                             for t in param_mappings[raw_name]:
-                                if hasattr(dataflow, 'store'):
-                                    dataflow.store.assign_struct_field(
-                                        f'gstruct:{resolved}.{field_name}', t, filepath)
+                                dataflow.store.assign_struct_field(
+                                    f'gstruct:{resolved}.{field_tail}', t, filepath)
             for child in n.children:
                 _visit(child)
 
@@ -473,8 +461,7 @@ def analyze(
                     struct_type = _resolve_struct_type(node)
                     if struct_type:
                         symbol_table.record_var_type(var_name, struct_type)
-                        if hasattr(dataflow, 'store'):
-                            dataflow.store.aliases[var_name] = struct_type
+                        dataflow.store.aliases[var_name] = struct_type
                     _process_init_list(init_list, var_name, struct_type)
         for child in node.children:
             _visit(child)

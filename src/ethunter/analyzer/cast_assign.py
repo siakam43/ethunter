@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import tree_sitter as ts
 
-from ethunter.analyzer.dataflow import VariableState
+from ethunter.analyzer.dataflow import DataflowEngine
 from ethunter.analyzer.symbol_table import SymbolTable
 from ethunter.analyzer.helpers import extract_identifier_from_declarator, find_enclosing_function
 
@@ -18,7 +18,7 @@ def analyze(
     tree: ts.Tree,
     filepath: str,
     symbol_table: SymbolTable,
-    dataflow: VariableState,
+    dataflow: DataflowEngine,
 ) -> list:
     """Track function pointer assignments via cast expressions."""
     edges: list = []
@@ -26,8 +26,7 @@ def analyze(
 
     def _assign(var_name: str, target: str, node: ts.Node) -> None:
         enclosing = find_enclosing_function(node, tree.root_node) or '<global>'
-        if hasattr(dataflow, 'store'):
-            dataflow.store.assign_func_var(enclosing, var_name, target)
+        dataflow.store.assign_func_var(enclosing, var_name, target)
 
     def _extract_cast_target(node: ts.Node) -> str | None:
         """Extract function name from inside a cast_expression."""

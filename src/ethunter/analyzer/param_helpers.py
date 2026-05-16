@@ -290,8 +290,8 @@ def prepare(tree: ts.Tree, filepath: str, dataflow, symbol_table=None) -> None:
     """Phase 1a: Cross-file pre-scan. Collect function metadata and register
     param->field / return->field mappings. Writes to engine only, no edges.
 
-    Populates: engine.func_params, engine.state.func_fp_params,
-               engine.state.param_usage, engine.param_fields, engine.ret_fields
+    Populates: engine.func_params, engine.func_fp_params,
+               engine.param_usage, engine.param_fields, engine.ret_fields
     """
     from ethunter.analyzer.helpers import extract_field_path, collect_field_assignments
 
@@ -303,10 +303,7 @@ def prepare(tree: ts.Tree, filepath: str, dataflow, symbol_table=None) -> None:
     # Store func_params on engine (cross-file accumulation)
     dataflow.func_params.update(func_params)
 
-    # Store func_fp_params on state (migration: still on state to keep hasattr fallback working)
-    if not hasattr(dataflow.state, 'func_fp_params'):
-        dataflow.state.func_fp_params = {}
-    dataflow.state.func_fp_params.update(func_fp_params)
+    dataflow.func_fp_params.update(func_fp_params)
 
     # Scan for field = param patterns -> register_param_mapping
     for fa in collect_field_assignments(tree, unwrap_fn=getattr(dataflow, 'unwrap_cast', None)):
@@ -366,9 +363,7 @@ def prepare(tree: ts.Tree, filepath: str, dataflow, symbol_table=None) -> None:
     param_usage: dict[tuple[str, int], str] = {}
     if func_fp_params:
         _classify_param_usage(tree.root_node, func_fp_params, func_params, param_usage)
-        if not hasattr(dataflow.state, 'param_usage'):
-            dataflow.state.param_usage = {}
-        dataflow.state.param_usage.update(param_usage)
+        dataflow.param_usage.update(param_usage)
 
     # Collect parameter types (new — Phase B)
     if symbol_table is not None:

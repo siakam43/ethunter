@@ -10,7 +10,7 @@ from __future__ import annotations
 import tree_sitter as ts
 
 from ethunter.graph.model import CallEdge, CallType, Confidence, Evidence
-from ethunter.analyzer.dataflow import VariableState
+from ethunter.analyzer.dataflow import DataflowEngine
 from ethunter.analyzer.symbol_table import SymbolTable
 from ethunter.analyzer.helpers import find_enclosing_function
 
@@ -19,7 +19,7 @@ def analyze(
     tree: ts.Tree,
     filepath: str,
     symbol_table: SymbolTable,
-    dataflow: VariableState,
+    dataflow: DataflowEngine,
 ) -> list[CallEdge]:
     """Detect indirect calls through array subscript expressions."""
     edges: list[CallEdge] = []

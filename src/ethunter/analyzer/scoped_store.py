@@ -1,6 +1,6 @@
 """Function-scoped dataflow storage.
 
-Replaces the flat VariableState.targets dict with four separate stores:
+Function-scoped dataflow storage with four separate stores:
   - func_vars: function-scoped variable -> targets
   - struct_fields: struct field -> targets (global, inherently cross-function)
   - global_arrays: global array -> targets

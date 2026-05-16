@@ -6,7 +6,7 @@ import pytest
 from ethunter.parser.ast_builder import parse_file
 from ethunter.analyzer.direct_call import analyze as direct_analyze
 from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
-from ethunter.analyzer.dataflow import VariableState, DataflowEngine
+from ethunter.analyzer.dataflow import DataflowEngine
 
 
 FIXTURES = os.path.join(os.path.dirname(__file__), 'fixtures', 'cross_file')
@@ -17,7 +17,7 @@ def _make_cross_file_env(dir_name, files):
     base = os.path.join(FIXTURES, dir_name)
     trees = {}
     st = SymbolTable()
-    df = DataflowEngine(state=VariableState())
+    df = DataflowEngine()
     for f in files:
         path = os.path.join(base, f)
         tree = parse_file(path)
@@ -47,12 +47,16 @@ def test_cross_file_direct_assign():
 
 
 def test_cross_file_param_assign():
-    from ethunter.analyzer import param_assign
+    from ethunter.analyzer import param_helpers, param_binding, callback_reg
     trees, st, df = _make_cross_file_env('callback_reg', ['callee.c', 'caller.c'])
+    for path, tree in trees.items():
+        param_helpers.prepare(tree, path, df, st)
+    for path, tree in trees.items():
+        param_binding.analyze(tree, path, st, df)
+    df.covered_callees = set()
     edges = []
     for path, tree in trees.items():
-        edges.extend(param_assign.analyze(tree, path, st, df))
-    # callback_reg fixtures have registration patterns that param_assign detects
+        edges.extend(callback_reg.analyze(tree, path, df))
     assert any(e.callee for e in edges)
 
 
@@ -72,6 +76,7 @@ def test_cross_file_field_call():
     edges = []
     for path, tree in trees.items():
         initializer_assign.analyze(tree, path, st, df)
+        field_call.collect(tree, path, df, st, st.all_function_names)
         edges.extend(field_call.analyze(tree, path, st, df))
     assert any('init' in e.callee.lower() or 'read' in e.callee.lower() for e in edges)
 

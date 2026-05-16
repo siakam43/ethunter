@@ -74,18 +74,25 @@ The `--format` parameter has been removed.
 
 The orchestrator runs analyzers in a **two-phase pipeline** plus independent modules:
 
+**Phase 1a: Metadata Collection** — cross-file pre-scan, no edges:
+| Module | Detects |
+|---|---|
+| `param_helpers.prepare()` | Collect func_params, func_fp_params, param_usage, param/ret fields |
+
 **Phase 1: Target Resolution** — writes function pointer targets to `dataflow` (no edges returned):
 | Module | Detects |
 |---|---|
 | `direct_assign` | `fp = func` direct variable assignment |
 | `initializer_assign` | `void (*fp)(void) = func` declaration with initializer |
 | `cast_assign` | `(void (*)(void))func` cast-style assignment |
-| `param_assign` | `register_callback(func)` callback parameter passing |
+| `param_helpers` | pre-scan: collects func_params, func_fp_params, param_usage metadata |
+| `param_binding` | call-site argument binding: writes dataflow + registration_sites, no edges |
 
-**Phase 1b: Callback Detection** — param_assign callback patterns that return edges:
+**Phase 1b: Callback Detection** — produces callback edges:
 | Module | Detects |
 |---|---|
-| `param_assign.analyze()` | Callback registration patterns (e.g., `signal(SIGINT, handler)`) |
+| `callback_reg` | callback_reg edges from registration_sites (3-stage: behavior check → coverage check → heuristic fallback) |
+| `param_dispatch` | callback_param edges: callee-body calls through fnptr params + call-site propagation |
 
 **Phase 2: Call Detection** — reads from `dataflow` to produce call edges:
 | Module | Detects |
@@ -134,7 +141,10 @@ src/ethunter/
     direct_assign.py  — direct function pointer assignment (fp = func)
     initializer_assign.py — declaration with initializer
     cast_assign.py    — cast-style assignment
-    param_assign.py   — callback parameter passing
+    param_helpers.py  — pre-scan metadata collection
+    param_binding.py  — call-site argument binding (Phase 1)
+    param_dispatch.py — fnptr param call detection (Phase 2)
+    callback_reg.py   — callback registration edge emission (Phase 3)
     direct_call_fp.py  — indirect calls through resolved function pointers
     field_call.py     — struct field function pointer calls
     array_call.py     — function pointer array dispatch

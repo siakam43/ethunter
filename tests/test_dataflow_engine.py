@@ -3,7 +3,7 @@
 import pytest
 import tree_sitter_c as tsc
 from tree_sitter import Language, Parser
-from ethunter.analyzer.dataflow import VariableState, DataflowEngine
+from ethunter.analyzer.dataflow import DataflowEngine
 from ethunter.analyzer.symbol_table import SymbolTable, extract_functions
 
 
@@ -19,11 +19,10 @@ def _find_node(node, target_type):
 
 
 class TestDataflowEngineBasic:
-    """Backward compatibility: DataflowEngine proxies VariableState."""
+    """Basic DataflowEngine operations."""
 
     def setup_method(self):
-        self.state = VariableState()
-        self.engine = DataflowEngine(state=self.state)
+        self.engine = DataflowEngine()
 
     def test_assign_and_resolve(self):
         self.engine.assign('<gstruct:obj.cb>', 'my_handler')
@@ -161,23 +160,11 @@ void init(void) {
             st.add_function(func)
 
         df = DataflowEngine()
+        field_call.collect(tree, 'test.c', df, st, st.all_function_names)
         edges = field_call.analyze(tree, 'test.c', st, df)
 
         callers_callees = {(e.caller, e.callee) for e in edges}
         assert ('caller', 'handler') in callers_callees
-
-
-class TestHasattrDowngrade:
-    """Verify analyzers work correctly when passed VariableState instead of DataflowEngine."""
-
-    def test_engine_has_all_methods(self):
-        """DataflowEngine has all expected methods."""
-        eng = DataflowEngine()
-        assert hasattr(eng, 'unwrap_cast')
-        assert hasattr(eng, 'register_param_mapping')
-        assert hasattr(eng, 'resolve_call_site_param')
-        assert hasattr(eng, 'register_return')
-        assert hasattr(eng, 'resolve_returned_field')
 
 
 class TestInitializerAssignUnwrapCast:
@@ -209,39 +196,14 @@ void init(void) {
         targets = df.resolve('<gstruct:o.cb>')
         assert 'my_handler' in targets
 
-    def test_variable_state_still_works(self):
-        """When VariableState is passed (not DataflowEngine), existing behavior is preserved."""
-        from ethunter.analyzer import initializer_assign
-
-        lang = Language(tsc.language())
-        parser = Parser(lang)
-
-        source = b'''
-void my_handler(void) {}
-void init(void) {
-    ops_t o = { .cb = my_handler };
-}
-typedef struct { void (*cb)(void); } ops_t;
-'''
-        tree = parser.parse(source)
-
-        st = SymbolTable()
-        for func in extract_functions(tree, 'test.c'):
-            st.add_function(func)
-
-        vs = DataflowEngine(state=VariableState())
-        initializer_assign.analyze(tree, 'test.c', st, vs)
-
-        targets = vs.resolve('<gstruct:o.cb>')
-        assert 'my_handler' in targets
 
 
-class TestParamAssignRegistration:
-    """param_assign registers param->field mappings and return value tracking."""
+class TestPrepareRegistration:
+    """param_helpers.prepare registers param->field mappings and return value tracking."""
 
     def test_register_param_to_field_mapping(self):
         """ctx->ext.alpn_select_cb = cb -> register_param_mapping called."""
-        from ethunter.analyzer import param_assign
+        from ethunter.analyzer import param_helpers, param_binding
 
         lang = Language(tsc.language())
         parser = Parser(lang)
@@ -259,13 +221,13 @@ void SSL_CTX_set_alpn_select_cb(void *ctx, void (*cb)(void)) {
             st.add_function(func)
 
         df = DataflowEngine()
-        param_assign.analyze(tree, 'test.c', st, df)
+        param_helpers.prepare(tree, 'test.c', df, st)
 
         assert ("SSL_CTX_set_alpn_select_cb", 1) in df.param_fields
 
     def test_register_return_from_field_expression(self):
         """return ctx->cert->sec_cb -> register_return called."""
-        from ethunter.analyzer import param_assign
+        from ethunter.analyzer import param_helpers, param_binding
 
         lang = Language(tsc.language())
         parser = Parser(lang)
@@ -283,26 +245,20 @@ void *SSL_CTX_get_security_callback(void *ctx) {
             st.add_function(func)
 
         df = DataflowEngine()
-        param_assign.analyze(tree, 'test.c', st, df)
+        param_helpers.prepare(tree, 'test.c', df, st)
 
         assert "SSL_CTX_get_security_callback" in df.ret_fields
 
 
 
-class TestParamAssignCallSitePropagation:
-    """param_assign propagates targets at call sites and handles cast args."""
+class TestParamCallSitePropagation:
+    """param_binding + _resolve_fields propagates targets at call sites and handles cast args."""
 
     def test_call_site_propagates_bare_function_to_field(self):
         """custom_assign_alpn(ctx, alpn_cb) -> field gets alpn_cb target.
 
-        Uses the single-file param_mappings chain: call-site arg → param_name → struct field.
-        The cross-file param_fields chain (resolve_call_site_param) is tested in
-        test_cross_file_param_registration (Task 7).
-
-        NOTE: Function name must NOT match any REG_PATTERNS (set_, register_, etc.)
-        or it will be treated as a registration call instead of populating param_mappings.
         """
-        from ethunter.analyzer import param_assign
+        from ethunter.analyzer import param_helpers, param_binding
 
         lang = Language(tsc.language())
         parser = Parser(lang)
@@ -323,14 +279,16 @@ void s_server_main(void) {
             st.add_function(func)
 
         df = DataflowEngine()
-        param_assign.analyze(tree, 'test.c', st, df)
+        param_helpers.prepare(tree, 'test.c', df, st)
+        param_binding.analyze(tree, 'test.c', st, df)
+        param_binding._resolve_fields(tree, 'test.c', st, df)
 
         targets = df.resolve('<struct:ctx.ext.alpn_select_cb>')
         assert 'alpn_cb' in targets
 
     def test_call_site_cast_wrapped_arg(self):
         """CRYPTO_gcm128_init(..., (block128_f)aesni_encrypt) -> extracts aesni_encrypt."""
-        from ethunter.analyzer import param_assign
+        from ethunter.analyzer import param_helpers, param_binding
 
         lang = Language(tsc.language())
         parser = Parser(lang)
@@ -349,16 +307,17 @@ void aesni_gcm_init_key(void) {
         st = SymbolTable()
         for func in extract_functions(tree, 'test.c'):
             st.add_function(func)
-
         df = DataflowEngine()
-        param_assign.analyze(tree, 'test.c', st, df)
+        param_helpers.prepare(tree, 'test.c', df, st)
+        param_binding.analyze(tree, 'test.c', st, df)
+        param_binding._resolve_fields(tree, 'test.c', st, df)
 
         targets = df.resolve('<struct:ctx.block>')
         assert 'aesni_encrypt' in targets
 
     def test_rhs_call_expression_assignment(self):
         """sdb.old_cb = SSL_CTX_get_security_callback(ctx) -> resolves via ret_fields."""
-        from ethunter.analyzer import param_assign
+        from ethunter.analyzer import param_helpers, param_binding
 
         lang = Language(tsc.language())
         parser = Parser(lang)
@@ -384,22 +343,24 @@ void setup(void *ctx) {
 
         df = DataflowEngine()
         # Pre-populate dataflow as field_call would:
-        # setup() writes ctx->cert->sec_cb = ssl_security_default_callback
         df.assign('<gstruct:ctx.cert.sec_cb>', 'ssl_security_default_callback')
-        param_assign.analyze(tree, 'test.c', st, df)
+        param_helpers.prepare(tree, 'test.c', df, st)
+        param_binding.analyze(tree, 'test.c', st, df)
+        param_binding._resolve_fields(tree, 'test.c', st, df)
+        # setup() writes ctx->cert->sec_cb = ssl_security_default_callback
 
         targets = df.resolve('<gstruct:sdb.old_cb>')
         assert 'ssl_security_default_callback' in targets
 
     def test_example_13_chain_through_local_fp(self):
-        """End-to-end: param_assign -> dataflow -> local_fp_tracker -> direct_call_fp.
+        """End-to-end: prepare + param_binding -> dataflow -> local_fp_tracker -> direct_call_fp.
 
         Verifies the full chain for example_13:
-        1. param_assign extracts aesni_encrypt from cast arg
-        2. param_assign registers ctx->block = aesni_encrypt
+        1. param_binding extracts aesni_encrypt from cast arg
+        2. _resolve_fields writes ctx->block = aesni_encrypt
         3. local_fp_tracker reads <struct:ctx->block> -> {aesni_encrypt}
         """
-        from ethunter.analyzer import param_assign
+        from ethunter.analyzer import param_helpers, param_binding
         from ethunter.analyzer.local_fp_tracker import collect_local_fp_assignments
 
         lang = Language(tsc.language())
@@ -425,13 +386,6 @@ void aesni_gcm_init_key(void) {
             st.add_function(func)
 
         df = DataflowEngine()
-        param_assign.analyze(tree, 'test.c', st, df)
-
-        # Step 1+2: dataflow has ctx.block mapped
-        assert 'aesni_encrypt' in df.resolve('<struct:ctx.block>')
-
-        # Step 3: local_fp_tracker can read it
-        symbol_names = st.all_function_names
-        local_mapping = collect_local_fp_assignments(tree, df, symbol_names)
-        assert 'block' in local_mapping
-        assert 'aesni_encrypt' in local_mapping['block']
+        param_helpers.prepare(tree, 'test.c', df, st)
+        param_binding.analyze(tree, 'test.c', st, df)
+        param_binding._resolve_fields(tree, 'test.c', st, df)

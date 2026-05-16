@@ -5,7 +5,7 @@ from __future__ import annotations
 import tree_sitter as ts
 
 from ethunter.graph.model import CallEdge, CallType, Confidence, Evidence
-from ethunter.analyzer.dataflow import VariableState
+from ethunter.analyzer.dataflow import DataflowEngine
 from ethunter.analyzer.symbol_table import SymbolTable
 
 
@@ -13,7 +13,7 @@ def analyze(
     tree: ts.Tree,
     filepath: str,
     symbol_table: SymbolTable,
-    dataflow: VariableState,
+    dataflow: DataflowEngine,
 ) -> list[CallEdge]:
     """Detect dlsym(handle, "func_name") with string literals and match against symbol table."""
     edges: list[CallEdge] = []

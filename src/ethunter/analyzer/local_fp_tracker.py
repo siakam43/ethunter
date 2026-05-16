@@ -7,20 +7,20 @@ Tracks local variables that inherit function pointer types from struct field acc
 - local = struct_var.field;
 
 Returns a mapping from local variable name to resolved function targets.
-Not stored in VariableState — local variables are function-scoped.
+Local variables are function-scoped (stored in ScopedStore.func_vars).
 """
 
 from __future__ import annotations
 
 import tree_sitter as ts
 
-from ethunter.analyzer.dataflow import VariableState
+from ethunter.analyzer.dataflow import DataflowEngine
 from ethunter.analyzer.helpers import extract_field_path
 
 
 def collect_local_fp_assignments(
     tree: ts.Tree,
-    dataflow: VariableState,
+    dataflow: DataflowEngine,
     symbol_names: set[str],
     symbol_table=None,
 ) -> dict[str, set[str]]:
@@ -69,7 +69,7 @@ def collect_local_fp_assignments(
         var_name: str,
         field_expr: ts.Node,
         mapping: dict[str, set[str]],
-        dataflow: VariableState,
+        dataflow: DataflowEngine,
         symbol_table=None,
     ) -> None:
         """Build dataflow key from field expression and resolve targets."""

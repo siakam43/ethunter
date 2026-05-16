@@ -23,7 +23,7 @@ def analyze(
     and coverage checks.
     """
     edges: list[CallEdge] = []
-    param_usage = getattr(dataflow.state, 'param_usage', {})
+    param_usage = dataflow.param_usage
     covered_callees = dataflow.covered_callees
 
     for site in dataflow.registration_sites:

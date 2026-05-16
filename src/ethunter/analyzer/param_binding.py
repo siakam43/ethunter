@@ -32,13 +32,13 @@ def analyze(
     """Phase 1: Bind call-site arguments to function targets. Writes dataflow
     and registration_sites. Returns empty list (no edges).
 
-    Reads: engine.func_params, engine.state.func_fp_params (from prepare),
+    Reads: engine.func_params, engine.func_fp_params (from prepare),
            symbol_table.all_function_names
     Writes: dataflow.targets (param->target mappings), engine.registration_sites,
             engine.call_site_targets (per-call-site targets for param_dispatch)
     """
     func_params = dataflow.func_params
-    func_fp_params = getattr(dataflow.state, 'func_fp_params', {})
+    func_fp_params = dataflow.func_fp_params
     symbol_names = symbol_table.all_function_names
     macros = _collect_simple_macros(tree)
 
@@ -77,7 +77,7 @@ def analyze(
                                     if _is_registration(call_name):
                                         is_reg = True
                                 if is_reg:
-                                    pu = getattr(dataflow.state, 'param_usage', None)
+                                    pu = dataflow.param_usage
                                     usage = pu.get((call_name, arg_idx), 'unknown') if pu else 'unknown'
                                     if usage not in ('forwarder', 'storage'):
                                         dataflow.registration_sites.append({
@@ -120,9 +120,7 @@ def analyze(
                                         call_site_targets[cs_key] = set()
                                     call_site_targets[cs_key].update(df_targets)
                         elif c.type == 'cast_expression':
-                            extracted = None
-                            if hasattr(dataflow, 'unwrap_cast'):
-                                extracted = dataflow.unwrap_cast(c)
+                            extracted = dataflow.unwrap_cast(c)
                             if not extracted:
                                 for cc in reversed(c.children):
                                     if cc.type == 'identifier' and cc.text:
@@ -140,7 +138,7 @@ def analyze(
                                     if _is_registration(call_name):
                                         is_reg = True
                                 if is_reg:
-                                    pu = getattr(dataflow.state, 'param_usage', None)
+                                    pu = dataflow.param_usage
                                     usage = pu.get((call_name, arg_idx), 'unknown') if pu else 'unknown'
                                     if usage not in ('forwarder', 'storage'):
                                         dataflow.registration_sites.append({
@@ -217,9 +215,8 @@ def _resolve_fields(tree: ts.Tree, filepath: str, symbol_table, dataflow) -> Non
         if fa.enclosing_func is None:
             continue
         field_path = fa.field_path
-        field_name = field_path.split('.')[-1]
         base_var = field_path.split('.')[0]
-        field_tail = dataflow.store.compute_field_tail(field_path) if hasattr(dataflow, 'store') else field_path
+        field_tail = dataflow.store.compute_field_tail(field_path)
 
         if fa.value_node and fa.value_node.type == 'call_expression':
             call_func = fa.value_node.child_by_field_name('function') or fa.value_node.children[0]
@@ -227,34 +224,26 @@ def _resolve_fields(tree: ts.Tree, filepath: str, symbol_table, dataflow) -> Non
                 func_name = call_func.text.decode('utf-8')
                 ret_targets = dataflow.resolve_returned_field(func_name)
                 for t in ret_targets:
-                    if hasattr(dataflow, 'store'):
-                        dataflow.store.assign_struct_field(f'gstruct:{base_var}.{field_tail}', t, filepath)
-                        struct_type = symbol_table.get_func_var_type(fa.enclosing_func, base_var)
-                        if struct_type:
-                            dataflow.store.assign_struct_field(f'gstruct:{struct_type}.{field_tail}', t, filepath)
+                    dataflow.store.assign_struct_field(f'gstruct:{base_var}.{field_tail}', t, filepath)
+                    struct_type = symbol_table.get_func_var_type(fa.enclosing_func, base_var)
+                    if struct_type:
+                        dataflow.store.assign_struct_field(f'gstruct:{struct_type}.{field_tail}', t, filepath)
         elif fa.resolved_value is not None:
             param_name = fa.resolved_value
             targets = param_mappings.get(param_name, set())
             for t in targets:
-                if hasattr(dataflow, 'store'):
-                    dataflow.store.assign_struct_field(f'gstruct:{base_var}.{field_tail}', t, filepath)
-                    struct_type = symbol_table.get_func_var_type(fa.enclosing_func, base_var)
-                    if struct_type:
-                        dataflow.store.assign_struct_field(f'gstruct:{struct_type}.{field_tail}', t, filepath)
+                dataflow.store.assign_struct_field(f'gstruct:{base_var}.{field_tail}', t, filepath)
+                struct_type = symbol_table.get_func_var_type(fa.enclosing_func, base_var)
+                if struct_type:
+                    dataflow.store.assign_struct_field(f'gstruct:{struct_type}.{field_tail}', t, filepath)
             df_targets = dataflow.resolve_variable(param_name, fa.enclosing_func)
             if not df_targets:
                 df_targets = dataflow.resolve_global_array(param_name)
             for t in df_targets:
-                if hasattr(dataflow, 'store'):
-                    dataflow.store.assign_struct_field(f'gstruct:{base_var}.{field_tail}', t, filepath)
-                    if field_name != field_tail:
-                        dataflow.store.assign_struct_field(f'gstruct:{field_name}', t, filepath)
-                    struct_type = symbol_table.get_func_var_type(fa.enclosing_func, base_var)
-                    if struct_type:
-                        dataflow.store.assign_struct_field(f'gstruct:{struct_type}.{field_tail}', t, filepath)
-                    if field_name != field_tail:
-                        dataflow.store.assign_struct_field(
-                            f'gstruct:{base_var}.{field_name}', t, filepath)
+                dataflow.store.assign_struct_field(f'gstruct:{base_var}.{field_tail}', t, filepath)
+                struct_type = symbol_table.get_func_var_type(fa.enclosing_func, base_var)
+                if struct_type:
+                    dataflow.store.assign_struct_field(f'gstruct:{struct_type}.{field_tail}', t, filepath)
             if fa.enclosing_func in func_params:
                 params = func_params[fa.enclosing_func]
                 if param_name in params:
